@@ -33,6 +33,14 @@
         </div>
       </header>
 
+      <p id="app-erro" class="erro" role="alert" aria-live="assertive"></p>
+
+      <nav class="app-nav" aria-label="Navegação principal">
+        <button type="button" class="nav-botao" data-tela="lancamento" aria-current="page">Lançar</button>
+        <button type="button" class="nav-botao" data-tela="cartoes">Cartões</button>
+      </nav>
+
+      <div id="tela-lancamento">
       <section aria-labelledby="lancamento-titulo">
         <h2 id="lancamento-titulo">Novo lançamento</h2>
         <form id="form-lancamento" novalidate>
@@ -79,7 +87,10 @@
           <div class="campo" id="grupo-cartao" hidden>
             <label for="lanc-cartao">Cartão</label>
             <select id="lanc-cartao"></select>
-            <p id="cartao-aviso" class="aviso" role="status" aria-live="polite"></p>
+            <p id="cartao-aviso" class="aviso" role="status" aria-live="polite" hidden>
+              Cadastre um cartão antes de lançar no crédito.
+              <button type="button" id="btn-ir-cartoes" class="link-botao">Cadastrar cartão</button>
+            </p>
           </div>
 
           <div class="campo" id="grupo-parcelas" hidden>
@@ -109,6 +120,48 @@
         <p id="mes-status" role="status" aria-live="polite"></p>
         <ul id="lista-lancamentos"></ul>
       </section>
+      </div>
+
+      <div id="tela-cartoes" hidden>
+        <section aria-labelledby="cartao-form-titulo">
+          <h2 id="cartao-form-titulo">Cartões</h2>
+          <form id="form-cartao" novalidate>
+            <div class="campo">
+              <label for="cartao-nome">Nome</label>
+              <input type="text" id="cartao-nome" placeholder="Ex.: LATAM" autocomplete="off" required>
+            </div>
+
+            <div class="campo">
+              <label for="cartao-fechamento">Dia de fechamento</label>
+              <input type="number" id="cartao-fechamento" min="1" max="31" step="1" inputmode="numeric" required>
+            </div>
+
+            <div class="campo">
+              <label for="cartao-vencimento">Dia de vencimento</label>
+              <input type="number" id="cartao-vencimento" min="1" max="31" step="1" inputmode="numeric" required>
+            </div>
+
+            <div class="campo">
+              <label for="cartao-titular">Titular</label>
+              <select id="cartao-titular" required></select>
+            </div>
+
+            <p id="cartao-form-erro" class="erro" role="alert" aria-live="assertive"></p>
+            <p id="cartao-form-sucesso" class="sucesso" role="status" aria-live="polite"></p>
+
+            <div class="form-acoes">
+              <button type="submit" id="btn-salvar-cartao">Salvar cartão</button>
+              <button type="button" id="btn-cancelar-edicao-cartao" hidden>Cancelar edição</button>
+            </div>
+          </form>
+        </section>
+
+        <section aria-labelledby="cartao-lista-titulo">
+          <h2 id="cartao-lista-titulo">Cartões cadastrados</h2>
+          <p id="cartoes-status" role="status" aria-live="polite"></p>
+          <ul id="lista-cartoes"></ul>
+        </section>
+      </div>
     </section>
   </main>
 

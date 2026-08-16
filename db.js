@@ -15,6 +15,8 @@ import {
   get,
   push,
   set,
+  update,
+  remove,
   query,
   orderByChild,
   equalTo
@@ -75,4 +77,26 @@ export async function criarLancamento(dados) {
   const novaRef = push(ref(db, "lancamentos"));
   await set(novaRef, dados);
   return novaRef.key;
+}
+
+export async function criarCartao(dados) {
+  const novaRef = push(ref(db, "cartoes"));
+  await set(novaRef, dados);
+  return novaRef.key;
+}
+
+export async function atualizarCartao(id, dados) {
+  await update(ref(db, `cartoes/${id}`), dados);
+}
+
+export async function excluirCartao(id) {
+  await remove(ref(db, `cartoes/${id}`));
+}
+
+// Verifica se existe algum lançamento vinculado a um cartão (usa o índice "cartaoId"),
+// para decidir se a exclusão definitiva é permitida ou se só a desativação é possível.
+export async function existeLancamentoComCartao(cartaoId) {
+  const consulta = query(ref(db, "lancamentos"), orderByChild("cartaoId"), equalTo(cartaoId));
+  const snapshot = await get(consulta);
+  return snapshot.exists();
 }

@@ -27,6 +27,13 @@
   box-sizing: border-box;
 }
 
+/* O seletor de atributo [hidden] do navegador tem a mesma especificidade de uma
+   classe (ex.: .campo); sem isto, "display: flex" de .campo vence e o elemento
+   fica visível mesmo com o atributo hidden presente. */
+[hidden] {
+  display: none !important;
+}
+
 html {
   font-size: 100%;
 }
@@ -261,6 +268,147 @@ select:disabled {
 
 section + section {
   margin-top: 2rem;
+}
+
+.app-nav {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+  border-bottom: 1px solid var(--cor-borda);
+}
+
+.nav-botao {
+  flex: 1;
+  background: none;
+  color: var(--cor-texto-suave);
+  border-radius: var(--raio) var(--raio) 0 0;
+  border-bottom: 2px solid transparent;
+  padding: 0.75rem 1rem;
+}
+
+.nav-botao:hover {
+  background-color: var(--cor-card);
+}
+
+.nav-botao[aria-current="page"] {
+  color: var(--cor-primaria);
+  border-bottom-color: var(--cor-primaria);
+  font-weight: 700;
+}
+
+.link-botao {
+  display: inline;
+  min-height: 0;
+  min-width: 0;
+  padding: 0;
+  background: none;
+  color: var(--cor-primaria);
+  font-weight: 600;
+  font-size: inherit;
+  text-decoration: underline;
+}
+
+.link-botao:hover {
+  background: none;
+  color: var(--cor-primaria-hover);
+}
+
+.form-acoes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.form-acoes button[type="submit"] {
+  flex: 1;
+  min-width: 8rem;
+}
+
+#btn-cancelar-edicao-cartao {
+  background-color: var(--cor-card);
+  color: var(--cor-texto);
+}
+
+#lista-cartoes {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.cartao-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  background-color: var(--cor-card);
+  border-radius: var(--raio);
+  padding: 0.875rem 1rem;
+}
+
+.cartao-item.cartao-inativo {
+  opacity: 0.7;
+}
+
+.cartao-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.cartao-detalhes {
+  font-size: 0.875rem;
+  color: var(--cor-texto-suave);
+}
+
+.badge-inativo {
+  display: inline-block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--cor-texto-suave);
+  border: 1px solid var(--cor-borda);
+  border-radius: 999px;
+  padding: 0.0625rem 0.5rem;
+  vertical-align: middle;
+}
+
+.cartao-acoes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.botao-secundario {
+  background-color: var(--cor-fundo);
+  color: var(--cor-texto);
+  border: 1px solid var(--cor-borda);
+  padding: 0.5rem 0.875rem;
+  font-size: 0.875rem;
+  min-height: 2.5rem;
+}
+
+.botao-secundario:hover {
+  background-color: var(--cor-card);
+}
+
+.botao-perigo {
+  background-color: var(--cor-fundo);
+  color: var(--cor-erro);
+  border: 1px solid var(--cor-erro);
+  padding: 0.5rem 0.875rem;
+  font-size: 0.875rem;
+  min-height: 2.5rem;
+}
+
+.botao-perigo:hover {
+  background-color: var(--cor-erro);
+  color: #ffffff;
+}
+
+#cartoes-status {
+  color: var(--cor-texto-suave);
+  font-size: 0.9375rem;
 }
 
 @media (min-width: 768px) {
