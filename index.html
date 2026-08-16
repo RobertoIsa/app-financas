@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Controle Financeiro</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main>
+    <section id="tela-login" aria-labelledby="login-titulo">
+      <h1 id="login-titulo">Controle Financeiro</h1>
+      <form id="form-login" novalidate>
+        <div class="campo">
+          <label for="login-email">E-mail</label>
+          <input type="email" id="login-email" name="email" autocomplete="username" required>
+        </div>
+        <div class="campo">
+          <label for="login-senha">Senha</label>
+          <input type="password" id="login-senha" name="senha" autocomplete="current-password" required>
+        </div>
+        <p id="login-erro" class="erro" role="alert" aria-live="assertive"></p>
+        <button type="submit">Entrar</button>
+      </form>
+    </section>
+
+    <section id="tela-app" hidden aria-labelledby="app-titulo">
+      <header class="app-header">
+        <h1 id="app-titulo">Controle Financeiro</h1>
+        <div class="usuario">
+          <span id="usuario-email"></span>
+          <button id="btn-sair" type="button">Sair</button>
+        </div>
+      </header>
+
+      <section aria-labelledby="categorias-titulo">
+        <h2 id="categorias-titulo">Teste de fumaça: /categorias</h2>
+        <p id="categorias-status" role="status" aria-live="polite"></p>
+        <ul id="lista-categorias"></ul>
+      </section>
+    </section>
+  </main>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
