@@ -22,6 +22,7 @@ import {
   equalTo
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-database.js";
 import { firebaseConfig } from "./firebase-config.js";
+import { calcularCascata } from "./logic.js";
 
 const app = initializeApp(firebaseConfig);
 
@@ -77,6 +78,71 @@ export async function criarLancamento(dados) {
   const novaRef = push(ref(db, "lancamentos"));
   await set(novaRef, dados);
   return novaRef.key;
+}
+
+export async function atualizarLancamento(id, dados) {
+  await update(ref(db, `lancamentos/${id}`), dados);
+}
+
+// Lê todas as parcelas de uma compra (mesmo idCompra), usando o índice "idCompra".
+export async function lerLancamentosPorIdCompra(idCompra) {
+  const consulta = query(ref(db, "lancamentos"), orderByChild("idCompra"), equalTo(idCompra));
+  const snapshot = await get(consulta);
+  if (!snapshot.exists()) return [];
+  const dados = snapshot.val();
+  return Object.entries(dados).map(([id, valor]) => ({ id, ...valor }));
+}
+
+// Grava todas as parcelas de uma compra no crédito numa única operação atômica
+// (update multi-caminho — ver CLAUDE.md "Controle de concorrência"). Se idCompraExistente
+// for informado, apaga antes as parcelas antigas desse idCompra, para reeditar uma compra
+// (mudar total de parcelas, valor etc.) sem duplicar — idempotência.
+export async function salvarParcelasCompra(parcelas, idCompraExistente) {
+  const atualizacoes = {};
+
+  if (idCompraExistente) {
+    const antigas = await lerLancamentosPorIdCompra(idCompraExistente);
+    for (const antiga of antigas) {
+      atualizacoes[`lancamentos/${antiga.id}`] = null;
+    }
+  }
+
+  for (const parcela of parcelas) {
+    const novaRef = push(ref(db, "lancamentos"));
+    atualizacoes[`lancamentos/${novaRef.key}`] = parcela;
+  }
+
+  await update(ref(db), atualizacoes);
+}
+
+// Atualiza valor/descrição/categoria (ou outros campos) de uma parcela e propaga a
+// mesma mudança para as parcelas FUTURAS ainda não pagas do mesmo idCompra (cascata —
+// ver CLAUDE.md "Cascata"), tudo numa única operação atômica.
+export async function atualizarParcelaComCascata(idCompra, parcelaAtual, mudancas) {
+  const parcelas = await lerLancamentosPorIdCompra(idCompra);
+  const agora = Date.now();
+  const atualizacoes = {};
+
+  // Paths totalmente qualificados (lancamentos/{id}/{campo}) em vez de gravar o nó
+  // inteiro: update multi-caminho só reescreve os campos citados, sem apagar o resto
+  // do lançamento (gravar um objeto parcial direto em "lancamentos/{id}" substituiria
+  // o nó inteiro).
+  function agendarCampos(id, campos) {
+    for (const [campo, valor] of Object.entries({ ...campos, atualizadoEm: agora })) {
+      atualizacoes[`lancamentos/${id}/${campo}`] = valor;
+    }
+  }
+
+  const parcelaEditada = parcelas.find((p) => p.parcelaAtual === parcelaAtual);
+  if (parcelaEditada) {
+    agendarCampos(parcelaEditada.id, mudancas);
+  }
+
+  for (const { id, mudancas: camposCascata } of calcularCascata(parcelas, parcelaAtual, mudancas)) {
+    agendarCampos(id, camposCascata);
+  }
+
+  await update(ref(db), atualizacoes);
 }
 
 export async function criarCartao(dados) {

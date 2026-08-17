@@ -1,8 +1,20 @@
 // ui/lancamento.js
 // Tela de lançamento rápido: formulário de novo lançamento + lista do mês.
 
-import { lerLancamentosDoMes, criarLancamento } from "../db.js";
-import { parseValorParaCentavos, formatCentavos, dataHojeISO, mesDeData } from "../logic.js";
+import {
+  lerLancamentosDoMes,
+  criarLancamento,
+  atualizarLancamento,
+  atualizarParcelaComCascata,
+  salvarParcelasCompra
+} from "../db.js";
+import {
+  parseValorParaCentavos,
+  formatCentavos,
+  dataHojeISO,
+  mesDeData,
+  gerarParcelas
+} from "../logic.js";
 
 // Inicializa a tela de lançamento. `deps` traz os dados já carregados pelo app.js
 // (categorias, membros, cartões) e o uid do usuário logado.
@@ -120,22 +132,134 @@ export function initTelaLancamento({ categorias, membros, cartoes, uid, irParaCa
     const item = document.createElement("li");
     item.className = "lanc-item";
 
+    const linha = document.createElement("div");
+    linha.className = "lanc-item-linha";
+
     const categoria = categoriasCache.find((c) => c.chave === lancamento.categoriaId);
     const icone = categoria?.icone ? `${categoria.icone} ` : "";
     const nomeCategoria = categoria?.nome || lancamento.categoriaId;
 
     const desc = document.createElement("span");
     desc.className = "lanc-desc";
-    desc.textContent = `${icone}${lancamento.descricao || nomeCategoria}`;
+    let textoDesc = `${icone}${lancamento.descricao || nomeCategoria}`;
+    if (lancamento.totalParcelas > 1) {
+      textoDesc += ` (${lancamento.parcelaAtual}/${lancamento.totalParcelas})`;
+    }
+    desc.textContent = textoDesc;
 
     const valor = document.createElement("span");
     valor.className = `lanc-valor lanc-${lancamento.tipo}`;
     const sinal = lancamento.tipo === "receita" ? "+" : "−";
     valor.textContent = `${sinal} ${formatCentavos(lancamento.valorCentavos)}`;
 
-    item.appendChild(desc);
-    item.appendChild(valor);
+    const btnEditar = document.createElement("button");
+    btnEditar.type = "button";
+    btnEditar.textContent = "Editar";
+    btnEditar.className = "botao-secundario botao-pequeno";
+    btnEditar.addEventListener("click", () => alternarEdicaoInline(item, lancamento));
+
+    linha.appendChild(desc);
+    linha.appendChild(valor);
+    linha.appendChild(btnEditar);
+    item.appendChild(linha);
+
+    if (lancamento.meioPagamento === "credito" && lancamento.faturaMes) {
+      const faturaEl = document.createElement("span");
+      faturaEl.className = "lanc-fatura";
+      faturaEl.textContent = `Fatura ${lancamento.faturaMes}`;
+      item.appendChild(faturaEl);
+    }
+
     return item;
+  }
+
+  // Edição inline de valor/descrição/categoria (o que a cascata propaga — ver
+  // CLAUDE.md "Cascata"). Para parcelas de uma compra parcelada, a mudança propaga
+  // às parcelas futuras ainda não pagas; para os demais lançamentos, é uma edição simples.
+  function alternarEdicaoInline(item, lancamento) {
+    const existente = item.querySelector(".lanc-item-edicao");
+    if (existente) {
+      existente.remove();
+      return;
+    }
+
+    const form = document.createElement("form");
+    form.className = "lanc-item-edicao";
+
+    const campoValor = document.createElement("input");
+    campoValor.type = "text";
+    campoValor.inputMode = "decimal";
+    campoValor.value = (lancamento.valorCentavos / 100).toFixed(2).replace(".", ",");
+    campoValor.setAttribute("aria-label", "Valor (R$)");
+
+    const campoDescricao = document.createElement("input");
+    campoDescricao.type = "text";
+    campoDescricao.value = lancamento.descricao || "";
+    campoDescricao.setAttribute("aria-label", "Descrição");
+
+    const campoCategoria = document.createElement("select");
+    campoCategoria.setAttribute("aria-label", "Categoria");
+    for (const cat of categoriasParaTipo(lancamento.tipo)) {
+      const opt = document.createElement("option");
+      opt.value = cat.chave;
+      opt.textContent = `${cat.icone ? cat.icone + " " : ""}${cat.nome}`;
+      if (cat.chave === lancamento.categoriaId) opt.selected = true;
+      campoCategoria.appendChild(opt);
+    }
+
+    const btnSalvar = document.createElement("button");
+    btnSalvar.type = "submit";
+    btnSalvar.textContent = "Salvar";
+    btnSalvar.className = "botao-pequeno";
+
+    const btnCancelar = document.createElement("button");
+    btnCancelar.type = "button";
+    btnCancelar.textContent = "Cancelar";
+    btnCancelar.className = "botao-secundario botao-pequeno";
+    btnCancelar.addEventListener("click", () => form.remove());
+
+    const erroEdicao = document.createElement("p");
+    erroEdicao.className = "erro";
+    erroEdicao.setAttribute("role", "alert");
+
+    form.appendChild(campoValor);
+    form.appendChild(campoDescricao);
+    form.appendChild(campoCategoria);
+    form.appendChild(btnSalvar);
+    form.appendChild(btnCancelar);
+    form.appendChild(erroEdicao);
+    item.appendChild(form);
+
+    form.addEventListener("submit", async (evento) => {
+      evento.preventDefault();
+      erroEdicao.textContent = "";
+
+      const valorCentavos = parseValorParaCentavos(campoValor.value);
+      if (isNaN(valorCentavos) || valorCentavos <= 0) {
+        erroEdicao.textContent = "Informe um valor válido maior que zero.";
+        return;
+      }
+      const mudancas = {
+        valorCentavos,
+        descricao: campoDescricao.value.trim(),
+        categoriaId: campoCategoria.value
+      };
+
+      btnSalvar.disabled = true;
+      btnSalvar.textContent = "Salvando...";
+      try {
+        if (lancamento.idCompra && lancamento.totalParcelas > 1) {
+          await atualizarParcelaComCascata(lancamento.idCompra, lancamento.parcelaAtual, mudancas);
+        } else {
+          await atualizarLancamento(lancamento.id, mudancas);
+        }
+        await carregarLancamentosDoMes();
+      } catch (erro) {
+        erroEdicao.textContent = `Erro ao salvar: ${erro.message || erro.code || "erro desconhecido"}`;
+        btnSalvar.disabled = false;
+        btnSalvar.textContent = "Salvar";
+      }
+    });
   }
 
   async function carregarLancamentosDoMes() {
@@ -190,6 +314,7 @@ export function initTelaLancamento({ categorias, membros, cartoes, uid, irParaCa
 
     let cartaoId = null;
     let totalParcelas = 1;
+    let cartaoSelecionado = null;
     if (meioPagamento === "credito") {
       if (cartoesAtivos().length === 0) {
         lancamentoErro.textContent = "Cadastre um cartão antes de lançar no crédito.";
@@ -200,41 +325,53 @@ export function initTelaLancamento({ categorias, membros, cartoes, uid, irParaCa
         lancamentoErro.textContent = "Selecione o cartão.";
         return;
       }
+      cartaoSelecionado = cartoesCache.find((c) => c.id === cartaoId);
       totalParcelas = parseInt(parcelasInput.value, 10) || 1;
       if (totalParcelas < 1) totalParcelas = 1;
     }
 
     const agora = Date.now();
-    const lancamento = {
-      tipo,
-      data,
-      mes: mesDeData(data),
-      valorCentavos,
-      descricao,
-      categoriaId,
-      meioPagamento,
-      responsavel,
-      criadoPor: uid,
-      criadoEm: agora,
-      atualizadoEm: agora,
-      pago: meioPagamento !== "credito"
-    };
-
-    if (meioPagamento === "credito") {
-      lancamento.cartaoId = cartaoId;
-      lancamento.parcelaAtual = 1;
-      lancamento.totalParcelas = totalParcelas;
-      lancamento.dataBaixa = null;
-      if (totalParcelas > 1) {
-        lancamento.idCompra = `ID-${agora}`;
-      }
-    }
 
     const botao = formLancamento.querySelector("button[type=submit]");
     botao.disabled = true;
     botao.textContent = "Salvando...";
     try {
-      await criarLancamento(lancamento);
+      if (meioPagamento === "credito") {
+        // Toda compra no crédito (mesmo à vista) ganha seu idCompra e passa pela
+        // engine de ciclo de fatura — ver CLAUDE.md "Ciclo de fatura" e "Parcelamento".
+        const parcelas = gerarParcelas({
+          idCompra: `ID-${agora}`,
+          dataCompra: data,
+          valorCentavos,
+          totalParcelas,
+          diaFechamentoCartao: cartaoSelecionado.diaFechamento,
+          categoriaId,
+          descricao,
+          meioPagamento,
+          cartaoId,
+          responsavel,
+          tipo,
+          criadoPor: uid,
+          criadoEm: agora
+        });
+        await salvarParcelasCompra(parcelas);
+      } else {
+        const lancamento = {
+          tipo,
+          data,
+          mes: mesDeData(data),
+          valorCentavos,
+          descricao,
+          categoriaId,
+          meioPagamento,
+          responsavel,
+          criadoPor: uid,
+          criadoEm: agora,
+          atualizadoEm: agora,
+          pago: true
+        };
+        await criarLancamento(lancamento);
+      }
       lancamentoSucesso.textContent = "Lançamento salvo!";
       formLancamento.reset();
       dataInput.value = dataHojeISO();
