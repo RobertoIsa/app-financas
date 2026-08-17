@@ -37,6 +37,7 @@
 
       <nav class="app-nav" aria-label="Navegação principal">
         <button type="button" class="nav-botao" data-tela="lancamento" aria-current="page">Lançar</button>
+        <button type="button" class="nav-botao" data-tela="mes">Mês</button>
         <button type="button" class="nav-botao" data-tela="cartoes">Cartões</button>
       </nav>
 
@@ -120,6 +121,50 @@
         <p id="mes-status" role="status" aria-live="polite"></p>
         <ul id="lista-lancamentos"></ul>
       </section>
+      </div>
+
+      <div id="tela-mes" hidden>
+        <section aria-labelledby="mesnav-titulo">
+          <h2 id="mesnav-titulo" class="sr-only">Navegador de mês</h2>
+          <div class="mes-nav">
+            <button type="button" id="mesnav-anterior" aria-label="Mês anterior">‹</button>
+            <span id="mesnav-label" class="mes-nav-label" aria-live="polite"></span>
+            <button type="button" id="mesnav-proximo" aria-label="Próximo mês">›</button>
+          </div>
+          <button type="button" id="mesnav-hoje" class="botao-secundario botao-pequeno">Ir para hoje</button>
+
+          <div class="mes-resumo">
+            <div class="mes-resumo-item destaque">
+              <span class="mes-resumo-rotulo">Vai sair da conta</span>
+              <span id="mes-resumo-desembolso" class="mes-resumo-valor">—</span>
+            </div>
+            <div class="mes-resumo-item">
+              <span class="mes-resumo-rotulo">Vai entrar na conta</span>
+              <span id="mes-resumo-entradas" class="mes-resumo-valor">—</span>
+            </div>
+            <div class="mes-resumo-item">
+              <span class="mes-resumo-rotulo">Saldo projetado</span>
+              <span id="mes-resumo-saldo" class="mes-resumo-valor">—</span>
+            </div>
+            <div class="mes-resumo-item">
+              <span class="mes-resumo-rotulo" title="Quanto foi gasto neste mês, independente de quando a fatura vence.">Gasto no mês (competência)</span>
+              <span id="mes-resumo-gasto" class="mes-resumo-valor">—</span>
+            </div>
+          </div>
+          <p class="mes-legenda">
+            <strong>Vai sair/entrar da conta</strong> = desembolso: quando o dinheiro
+            realmente se move (vencimento da fatura, pra crédito). <strong>Gasto no
+            mês</strong> = competência: quando a compra aconteceu. Os dois divergem
+            quando há compras no cartão — a compra é de um mês, mas a fatura vence
+            no mês seguinte (ou depois).
+          </p>
+        </section>
+
+        <section aria-labelledby="mes-lista-titulo">
+          <h2 id="mes-lista-titulo">Lançamentos do mês (competência)</h2>
+          <p id="mes-lista-status" role="status" aria-live="polite"></p>
+          <ul id="mes-lista-lancamentos"></ul>
+        </section>
       </div>
 
       <div id="tela-cartoes" hidden>

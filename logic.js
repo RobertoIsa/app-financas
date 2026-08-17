@@ -61,6 +61,34 @@ export function calcularFaturaMes(dataCompraISO, diaFechamento) {
   return dia > diaFechamento ? somarMeses(mesCompra, 1) : mesCompra;
 }
 
+// Quantidade de dias de um mês YYYY-MM (usado para não gerar datas inválidas como
+// "2026-02-31" quando o diaVencimento do cartão não existe no mês de destino).
+function diasNoMes(mesISO) {
+  const [ano, mes] = mesISO.split("-").map(Number);
+  return new Date(ano, mes, 0).getDate();
+}
+
+// Regra de "Vencimento e mês de desembolso" (ver CLAUDE.md): dado o faturaMes de uma
+// compra no crédito e o diaFechamento/diaVencimento do cartão, devolve a data completa
+// de vencimento da fatura e o mês em que o dinheiro efetivamente sai da conta
+// (mesDesembolso — eixo PRINCIPAL do app). Resultado deve ser gravado no lançamento e
+// NUNCA recalculado depois (congelado), assim como faturaMes.
+export function calcularVencimentoEDesembolso({ faturaMes, diaFechamento, diaVencimento }) {
+  const mesVencimento = diaVencimento > diaFechamento ? faturaMes : somarMeses(faturaMes, 1);
+  const dia = Math.min(diaVencimento, diasNoMes(mesVencimento));
+  const vencimento = `${mesVencimento}-${String(dia).padStart(2, "0")}`;
+  return { vencimento, mesDesembolso: mesVencimento };
+}
+
+// Devolve o mesDesembolso de um lançamento já gravado, com fallback para registros
+// antigos que não tinham esse campo (ver CLAUDE.md "Lançamentos antigos"): crédito cai
+// de volta no faturaMes, os demais no próprio mes (movimento imediato). Não recalcula
+// nem reescreve nada — é só uma leitura tolerante.
+export function obterMesDesembolso(lancamento) {
+  if (lancamento.mesDesembolso) return lancamento.mesDesembolso;
+  return lancamento.faturaMes || lancamento.mes;
+}
+
 // Gera os N lançamentos (parcelas) de uma compra no crédito, todos ligados pelo mesmo
 // idCompra. A parcela k recebe faturaMes = faturaMes da parcela 1 + (k-1) meses.
 //
@@ -72,6 +100,7 @@ export function gerarParcelas({
   valorCentavos,
   totalParcelas,
   diaFechamentoCartao,
+  diaVencimentoCartao,
   categoriaId,
   descricao,
   meioPagamento,
@@ -84,17 +113,25 @@ export function gerarParcelas({
   const faturaMesBase = calcularFaturaMes(dataCompra, diaFechamentoCartao);
   const parcelas = [];
   for (let k = 1; k <= totalParcelas; k++) {
+    const faturaMes = somarMeses(faturaMesBase, k - 1);
+    const { vencimento, mesDesembolso } = calcularVencimentoEDesembolso({
+      faturaMes,
+      diaFechamento: diaFechamentoCartao,
+      diaVencimento: diaVencimentoCartao
+    });
     parcelas.push({
       tipo,
       data: dataCompra,
       mes: mesDeData(dataCompra),
+      mesDesembolso,
       valorCentavos,
       descricao,
       categoriaId,
       meioPagamento,
       cartaoId,
       responsavel,
-      faturaMes: somarMeses(faturaMesBase, k - 1),
+      faturaMes,
+      vencimento,
       idCompra,
       parcelaAtual: k,
       totalParcelas,

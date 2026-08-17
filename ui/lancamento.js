@@ -345,6 +345,7 @@ export function initTelaLancamento({ categorias, membros, cartoes, uid, irParaCa
           valorCentavos,
           totalParcelas,
           diaFechamentoCartao: cartaoSelecionado.diaFechamento,
+          diaVencimentoCartao: cartaoSelecionado.diaVencimento,
           categoriaId,
           descricao,
           meioPagamento,
@@ -360,6 +361,7 @@ export function initTelaLancamento({ categorias, membros, cartoes, uid, irParaCa
           tipo,
           data,
           mes: mesDeData(data),
+          mesDesembolso: mesDeData(data), // não-crédito: dinheiro sai/entra na hora
           valorCentavos,
           descricao,
           categoriaId,

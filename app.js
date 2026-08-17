@@ -4,6 +4,7 @@
 import { login, logout, onAuthChange, lerCategorias, lerMembros, lerCartoes } from "./db.js";
 import { initTelaLancamento } from "./ui/lancamento.js";
 import { initTelaCartoes } from "./ui/cartoes.js";
+import { initTelaMes } from "./ui/mes.js";
 
 const telaLogin = document.getElementById("tela-login");
 const telaApp = document.getElementById("tela-app");
@@ -18,6 +19,7 @@ const appErro = document.getElementById("app-erro");
 const botoesNav = document.querySelectorAll(".nav-botao");
 const telasPorNome = {
   lancamento: document.getElementById("tela-lancamento"),
+  mes: document.getElementById("tela-mes"),
   cartoes: document.getElementById("tela-cartoes")
 };
 
@@ -99,6 +101,8 @@ async function inicializarTelaApp(uid) {
       membros,
       aoMudar: (novaListaCartoes) => lancamentoHandle.recarregarCartoes(novaListaCartoes)
     });
+
+    initTelaMes({ categorias });
   } catch (erro) {
     appErro.textContent = `Erro ao carregar dados: ${erro.message || erro.code || "erro desconhecido"}`;
   }

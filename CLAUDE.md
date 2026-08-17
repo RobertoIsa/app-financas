@@ -2,12 +2,29 @@
 
 ## Objetivo
 
-App pessoal de controle de gastos e receitas do dia a dia, usado por **duas pessoas**
-(Roberto e esposa) sobre **uma única base compartilhada** (finanças da casa).
-Registra qualquer movimento — receita ou despesa — em qualquer meio de pagamento
-(dinheiro, débito, Pix, transferência, cartão de crédito), com categoria e descrição livre.
-Uso principal no **celular**, instalado como app (PWA), com sincronia automática entre
-os dispositivos do casal e backup na nuvem.
+App pessoal de **controle e projeção de fluxo de caixa** do casal (Roberto e esposa),
+sobre **uma única base compartilhada** (finanças da casa). Não é só um registro do
+passado: o objetivo central é **previsibilidade** — parado em qualquer mês, enxergar
+meses futuros e responder "quanto vou desembolsar e quanto vou receber em novembro?".
+Registra qualquer movimento — receita ou despesa — em qualquer meio (dinheiro, débito,
+Pix, transferência, crédito), com categoria e descrição livre. Uso principal no
+**celular**, instalado como app (PWA), com sincronia automática e backup na nuvem.
+
+### Os dois eixos de tempo (conceito central)
+
+Todo valor é olhado por **dois eixos**, porque a data em que algo acontece raramente é
+a data em que o dinheiro se move:
+
+- **Desembolso (eixo PRINCIPAL):** quando o dinheiro efetivamente **sai/entra da conta**.
+  Para crédito, é o **vencimento da fatura** (não a data da compra). Para dinheiro/débito/
+  Pix/transferência, é a própria data. Responde: *"quanto vai sair da minha conta em
+  novembro?"* → soma tudo que **vence/cai** em novembro. É o número que manda no app.
+- **Gasto/competência (eixo secundário):** quando a compra **aconteceu** (data do fato),
+  independente de quando é paga. Responde: *"quanto gastei referente a novembro?"* → visão
+  de orçamento puro.
+
+Exemplo: compra de R$300 em 3x no cartão em agosto = **um gasto de agosto** (eixo gasto),
+mas **três desembolsos** nos meses em que cada fatura vence (eixo desembolso).
 
 > Substitui o sistema atual de planilha (Google Sheets + Apps Script), preservando as
 > boas ideias já validadas ali: agrupamento de parcelas por `idCompra`, desdobramento
@@ -102,11 +119,14 @@ por mês agora — só quando/se crescer muito; ver "Arquivamento").
 
 /lancamentos/{id}: {
   tipo: "despesa",            # "receita" | "despesa"
-  data: "2026-08-14",         # data do fato (YYYY-MM-DD)
-  mes: "2026-08",             # YYYY-MM — indexado, base das consultas mensais
+  data: "2026-08-14",         # data do fato / competência (YYYY-MM-DD)
+  mes: "2026-08",             # YYYY-MM da data — eixo GASTO (indexado)
+  mesDesembolso: "2026-09",   # YYYY-MM em que o dinheiro sai/cai — eixo DESEMBOLSO (indexado)
+                              #   não-crédito: = mes (imediato)
+                              #   crédito: = mês do VENCIMENTO da fatura (ver regra)
   valorCentavos: 4990,        # INTEIRO em centavos (R$ 49,90) — nunca float
   descricao: "iFood",         # texto livre
-  categoriaId: "-Nxxx",
+  categoriaId: "mercado",
   meioPagamento: "credito",   # "dinheiro"|"debito"|"pix"|"transferencia"|"credito"
   cartaoId: "-Nyyy",          # só quando meioPagamento === "credito"
   responsavel: "roberto",     # "roberto" | "esposa" | "casal" — de quem é o gasto.
@@ -114,17 +134,60 @@ por mês agora — só quando/se crescer muito; ver "Arquivamento").
                               # de quem é a despesa (ex.: você lança um gasto dela).
 
   # --- só para compras no crédito ---
-  faturaMes: "2026-09",       # ciclo de fatura em que a compra cai (ver regra)
+  faturaMes: "2026-08",       # ciclo de fatura em que a compra cai (fechamento)
+  vencimento: "2026-09-05",   # data em que essa fatura é paga (desembolso) — congelado
   idCompra: "ID-1723...",     # agrupa todas as parcelas da mesma compra
   parcelaAtual: 1,
   totalParcelas: 10,
   pago: false,                # baixa da fatura
   dataBaixa: null,            # "2026-10-10" quando a fatura é paga
 
+  # --- crédito a receber (compra para terceiro) ---
+  paraTerceiro: false,        # true = esta despesa é reembolsável por alguém
+  devedor: null,              # ex.: "Irmão" — quem vai te pagar de volta
+  idReembolso: null,          # liga a despesa aos itens em /receber que ela gerou
+
+  # --- recorrência (contas/receitas mensais) ---
+  idRecorrencia: null,        # liga as ocorrências mensais de um item recorrente
+
   # --- auditoria ---
   criadoPor: "{uid}",
   criadoEm: 1723650000000,
   atualizadoEm: 1723650000000
+}
+
+# Crédito a receber: espelha uma compra para terceiro. Fica FORA de /lancamentos
+# enquanto pendente (não conta como receita até cair). Na baixa, vira uma receita real.
+/receber/{id}: {
+  idReembolso: "REEMB-1723...",  # agrupa os recebimentos esperados de uma mesma compra
+  origemIdCompra: "ID-1723...",  # a compra (despesa) que gerou este crédito
+  devedor: "Irmão",
+  valorCentavos: 10000,          # valor deste recebimento esperado (R$ 100,00)
+  parcelaAtual: 1,
+  totalParcelas: 3,
+  mesEsperado: "2026-09",        # YYYY-MM em que se espera receber (indexado) — editável
+  status: "pendente",            # "pendente" | "recebido"
+  dataRecebido: null,            # preenchido na baixa
+  lancamentoReceitaId: null,     # id da receita gerada em /lancamentos na baixa
+  criadoPor, criadoEm, atualizadoEm
+}
+
+# Recorrência: regra guardada UMA vez. Ocorrências futuras são projetadas virtualmente
+# a partir daqui (não gravadas). Ao chegar o mês, materializa em /lancamentos (uma vez),
+# com idRecorrencia apontando de volta pra esta regra.
+/recorrencias/{id}: {
+  descricao: "Aluguel",
+  tipo: "despesa",               # "receita" | "despesa"
+  valorCentavos: 200000,
+  categoriaId: "moradia",
+  meioPagamento: "pix",
+  cartaoId: null,                # se for no crédito
+  responsavel: "casal",
+  diaDoMes: 5,                   # dia base da ocorrência
+  inicio: "2026-08",             # primeiro mês (YYYY-MM)
+  fim: null,                     # null = sem fim; ou "2027-12"
+  ativo: true,
+  criadoPor, criadoEm, atualizadoEm
 }
 
 /logs/erros/{id}:  { ts, uid, tela, mensagem, contexto }
@@ -134,11 +197,13 @@ por mês agora — só quando/se crescer muito; ver "Arquivamento").
 ### Índices necessários
 
 ```json
-"lancamentos": { ".indexOn": ["mes", "idCompra", "cartaoId", "faturaMes"] }
+"lancamentos": { ".indexOn": ["mes", "mesDesembolso", "idCompra", "cartaoId", "faturaMes", "idReembolso"] }
+"receber":     { ".indexOn": ["mesEsperado", "idReembolso", "origemIdCompra", "status"] }
 ```
 
-O dashboard e a lista **sempre** consultam por `mes` (`orderByChild("mes").equalTo("2026-08")`)
-— nunca escutam `/lancamentos` inteiro, senão baixariam a base toda.
+Consultas **sempre** por índice, nunca escutando o nó inteiro. A lista/orçamento consulta
+por `mes` (eixo gasto); a **projeção de desembolso** consulta por `mesDesembolso`; o
+"A Receber" consulta `/receber` por `mesEsperado`.
 
 ### Por que centavos inteiros
 
@@ -220,6 +285,16 @@ da compra. (Isso corrige o agrupamento por mês-da-compra que a planilha usava.)
 > recalcula retroativamente. Se você editar depois o dia de fechamento do cartão, a mudança
 > vale só para compras **novas** — faturas já lançadas/conferidas/pagas não se remexem.
 
+### Vencimento e mês de desembolso (eixo principal)
+A fatura fecha num mês (`faturaMes`) mas é **paga** no dia de vencimento — que pode cair
+no mês seguinte. Dado o cartão (`diaFechamento` F, `diaVencimento` V) e o `faturaMes`:
+- se `V > F` → vencimento no **mesmo mês** do faturaMes (fecha dia 5, paga dia 12);
+- se `V <= F` → vencimento no **mês seguinte** ao faturaMes (fecha dia 29, paga dia 5).
+
+`vencimento` (data completa) e `mesDesembolso` são gravados e **congelados** na criação.
+Para não-crédito, `mesDesembolso = mes` (o dinheiro sai na hora). Este campo é o que
+alimenta a pergunta principal do app: "quanto sai da conta no mês X".
+
 ### Parcelamento
 - Só no crédito. Ao informar `totalParcelas > 1`, gera N lançamentos ligados por `idCompra`.
 - Parcela `k` tem `faturaMes` = faturaMes da parcela 1 **+ (k-1) meses**.
@@ -234,6 +309,47 @@ do mesmo `idCompra` (as já pagas não mudam).
   de um cartão num `faturaMes`, **e** gerar 1 lançamento de despesa (o pagamento em si,
   ex.: via Pix) para não contar o gasto duas vezes no fluxo de caixa.
 - Desfazer reverte tudo: remove o lançamento de pagamento e limpa `pago`/`dataBaixa`.
+
+### Crédito a receber (compra para terceiro)
+Fluxo: ao lançar uma despesa, marcar **"compra para terceiro"** + `devedor`. A despesa
+segue **normal** (cai na fatura, conta no orçamento e no desembolso do Roberto — decisão
+do usuário: entra no orçamento dele). Em paralelo, nasce um **crédito a receber que
+espelha a compra**: se a compra é 3x de R$100, gera 3 itens em `/receber` de R$100,
+ligados por `idReembolso` e ao `origemIdCompra`.
+- **Nº de recebimentos é editável** (o parente pode pagar num ritmo diferente do
+  parcelamento do cartão): 1 vez, ou N vezes.
+- **`mesEsperado`** de cada recebimento: default = mês do desembolso da parcela
+  correspondente (assim a entrada esperada alinha com a saída da fatura); editável.
+- **Pendente ≠ receita.** Enquanto `status = "pendente"`, o valor NÃO é receita — aparece
+  só como "entrada prevista" na projeção e no painel "A Receber". Na **baixa**
+  (`status = "recebido"`), gera uma receita real em `/lancamentos` (categoria
+  `recebimentos_terceiros`) no mês em que o dinheiro caiu.
+- Evita dinheiro fantasma: nunca infla a receita antes de o valor existir.
+
+### Recorrência (contas e receitas mensais)
+Itens que se repetem todo mês (salário, aluguel, assinaturas). **Método: regra + projeção
+virtual** (NÃO gerar cópias à frente):
+- A recorrência é uma **regra** guardada uma vez em `/recorrencias` (valor, categoria,
+  dia, início/fim).
+- Meses **futuros** são projetados **virtualmente** a partir da regra na hora de exibir —
+  nada é gravado. Assim o **horizonte de projeção é escolha do usuário** (6/12/24/36 meses)
+  sem pré-gerar nada, e editar o valor atualiza todas as projeções futuras na hora.
+- Quando um mês **chega** (ou o usuário confirma), a ocorrência daquele mês é
+  **materializada** em `/lancamentos` (uma vez), virando um lançamento real editável.
+- Encerrar/editar a regra afeta só o **futuro**; ocorrências já materializadas ficam.
+
+Isso é mais enxuto que gerar N meses à frente (método comum): sem inchaço no banco, sem
+rotina de reabastecimento, sem reescrever cópias quando um valor muda.
+
+### Projeção mês a mês (coração do "controle completo")
+Para um mês M, o app calcula e mostra:
+- **Saídas previstas (eixo desembolso):** Σ lançamentos com `mesDesembolso = M`
+  (faturas que vencem em M + despesas imediatas de M). ← número principal.
+- **Entradas previstas:** Σ receitas confirmadas de M + Σ `/receber` pendentes com
+  `mesEsperado = M` (marcadas como previstas) + receitas recorrentes de M.
+- **Saldo projetado** = entradas − saídas.
+- Visão secundária (eixo gasto/orçamento): Σ por `mes`, por categoria, por pessoa.
+Funciona para qualquer mês — passado, atual ou futuro (é o que dá a previsibilidade).
 
 ---
 
@@ -262,12 +378,23 @@ do mesmo `idCompra` (as já pagas não mudam).
     "cartoes":     { ".write": "auth != null && root.child('membros').child(auth.uid).exists()" },
     "lancamentos": {
       ".write": "auth != null && root.child('membros').child(auth.uid).exists()",
-      ".indexOn": ["mes", "idCompra", "cartaoId", "faturaMes"]
+      ".indexOn": ["mes", "mesDesembolso", "idCompra", "cartaoId", "faturaMes", "idReembolso"]
+    },
+    "receber": {
+      ".write": "auth != null && root.child('membros').child(auth.uid).exists()",
+      ".indexOn": ["mesEsperado", "idReembolso", "origemIdCompra", "status"]
+    },
+    "recorrencias": {
+      ".write": "auth != null && root.child('membros').child(auth.uid).exists()"
     },
     "logs":        { ".write": "auth != null && root.child('membros').child(auth.uid).exists()" }
   }
 }
 ```
+
+> Ao chegar na etapa de crédito a receber, **republicar** estas regras no console (elas
+> adicionam o nó `/receber` e os índices `mesDesembolso`/`idReembolso`). Enquanto isso não
+> acontecer, consultas por esses novos índices vão falhar pedindo `.indexOn`.
 
 - Escrita é concedida **ramo a ramo**, nunca na raiz. `/membros` fica sem regra de
   escrita → protegida (só se altera pelo console). **Cuidado com o RTDB:** regras
@@ -315,18 +442,26 @@ do mesmo `idCompra` (as já pagas não mudam).
 
 1. **Login** — e-mail/senha (e/ou Google).
 2. **Lançamento rápido** (home) — tipo (receita/despesa), valor, categoria, descrição,
-   meio de pagamento, data (default hoje); se crédito: cartão + nº de parcelas.
-3. **Lista do mês** — lançamentos do mês, com filtro; editar/excluir.
-4. **Resumo / Dashboard** — receita × despesa, saldo, totais por categoria, status das
-   faturas, e **visão por pessoa** (Roberto / Esposa / Casal) com filtro.
-5. **Faturas** — fatura do mês por cartão; pagar (baixa) e desfazer.
-6. **Categorias** — catálogo (CRUD) de despesa e receita.
-7. **Cartões** — cadastro in-app (CRUD). Formulário: nome, dia de fechamento (1–31),
-   dia de vencimento (1–31), titular (Roberto/Esposa). Lista os cartões com editar e
-   **desativar** (`ativo: false`) — desativar preserva o histórico de compras; excluir
-   de vez só se não houver lançamentos vinculados. Cartão recém-cadastrado já aparece
-   no seletor de compras no crédito.
-8. **Ajustes** — exportar backup, tema, gerenciar membros (admin).
+   meio de pagamento, data (default hoje); se crédito: cartão + nº de parcelas; se despesa:
+   opção **"compra para terceiro"** + devedor + nº de recebimentos esperados.
+3. **Mês (lista + seletor de mês)** — **navegador de mês** (‹ Agosto 2026 ›) com os
+   lançamentos daquele mês e, no topo, os **totais do mês nos dois eixos**: desembolso
+   previsto (principal) e gasto por competência (secundário), com saldo. Editar/excluir.
+   É a base que dá acesso a meses futuros/passados. **Próxima a construir.**
+4. **Projeção / Dashboard** — o coração do controle completo: para o mês selecionado,
+   saídas previstas (desembolso), entradas previstas (receitas + recebíveis pendentes),
+   **saldo projetado**; totais por categoria e **por pessoa** (Roberto/Esposa/Casal);
+   idealmente uma faixa de vários meses à frente para ver a tendência.
+5. **Faturas** — fatura por cartão/`faturaMes`; pagar (baixa) e desfazer.
+6. **A Receber** — créditos a receber por devedor: quanto cada um deve, o que está
+   pendente por mês esperado, e botão de **baixa** (marcar recebido → vira receita).
+7. **Cartões** — cadastro in-app (CRUD): nome, dia de fechamento (1–31), dia de vencimento
+   (1–31), titular. Editar e **desativar** (preserva histórico); excluir só sem lançamentos
+   vinculados.
+8. **Categorias** — catálogo (CRUD) de despesa e receita.
+9. **Recorrências** — gerenciar itens mensais (salário, aluguel, assinaturas): criar,
+   editar valor, encerrar (afeta futuras).
+10. **Ajustes** — exportar backup, tema, gerenciar membros (admin).
 
 ---
 
@@ -347,12 +482,38 @@ do mesmo `idCompra` (as já pagas não mudam).
   (Investimentos, Empréstimo) e 1 de sistema (Pagamento de Fatura, oculta). "Alimentação"
   virou "Restaurantes" (par com "Mercado"). Incluídas 4 recorrentes: Água, Internet/Telefone,
   Assinaturas/Streaming, Impostos e Taxas.
-- **Cartões cadastrados no app** (tela 7), não no console. Desativar preserva histórico.
+- **Cartões cadastrados no app**, não no console. Desativar preserva histórico.
   `faturaMes` congelado no lançamento — editar fechamento não remexe fatura antiga.
+- **Objetivo é projeção de fluxo de caixa**, não só registro. Dois eixos de tempo:
+  **desembolso** (quando o dinheiro se move; eixo PRINCIPAL) e **gasto/competência**
+  (quando a compra aconteceu; secundário). `mesDesembolso` congelado por lançamento.
+- **Crédito a receber:** compra para terceiro **entra no orçamento do Roberto** (decisão
+  do usuário) e gera recebíveis espelhando a compra em `/receber`. Recebível **pendente
+  não é receita** — só vira receita real na baixa, no mês em que o dinheiro cai. Nº de
+  recebimentos e `mesEsperado` editáveis (**default = mês de vencimento da fatura
+  correspondente — confirmado**).
+- **Recorrência (método regra + projeção virtual):** regra guardada uma vez em
+  `/recorrencias`; meses futuros projetados **virtualmente** (horizonte **escolhido pelo
+  usuário**, não fixo); mês corrente materializado em `/lancamentos`. Mais enxuto que gerar
+  cópias à frente (sem inchaço, sem reabastecer, sem reescrever ao mudar valor).
 
 ---
 
-## Pendências desta fase
+## Estado da implementação
 
-Nenhuma. Arquitetura fechada — cartões são cadastrados dentro do próprio app (tela 7),
-não precisam ser definidos no planejamento. Pronto para implementação.
+**Feito e validado:** login seguro (allowlist), tela de lançamento, cadastro de cartões,
+campos de crédito condicionais, engine de parcelamento + ciclo de fatura (`faturaMes`,
+com virada de ano validada), listagem do mês atual, regras de segurança publicadas.
+
+**Próximos passos (nesta ordem):**
+1. **Tela "Mês" (lista + seletor de mês)** com totais nos dois eixos — base de tudo.
+2. **Eixo desembolso:** adicionar `vencimento`/`mesDesembolso` (congelados) aos lançamentos
+   de crédito e passar a projetar por vencimento.
+3. **Crédito a receber:** marcador na despesa + nó `/receber` + painel "A Receber"
+   (requer republicar as regras com o nó `/receber` e os novos índices).
+4. **Projeção / Dashboard** mês a mês (saídas × entradas × saldo projetado).
+5. **Recorrências.**
+6. **PWA + deploy no Vercel** (instalar no celular).
+
+**Ajustes finos anotados:** rótulo "Valor da parcela" no crédito parcelado; melhorar o
+campo de data (fácil esquecer de trocar o dia).

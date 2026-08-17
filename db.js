@@ -22,7 +22,7 @@ import {
   equalTo
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-database.js";
 import { firebaseConfig } from "./firebase-config.js";
-import { calcularCascata } from "./logic.js";
+import { calcularCascata, somarMeses, obterMesDesembolso } from "./logic.js";
 
 const app = initializeApp(firebaseConfig);
 
@@ -72,6 +72,19 @@ export async function lerLancamentosDoMes(mes) {
   if (!snapshot.exists()) return [];
   const dados = snapshot.val();
   return Object.entries(dados).map(([id, valor]) => ({ id, ...valor }));
+}
+
+// Lê os lançamentos cujo mesDesembolso (eixo PRINCIPAL — ver CLAUDE.md "Os dois eixos
+// de tempo") é igual a `mesAlvo`. O índice ".indexOn" de mesDesembolso ainda não foi
+// republicado nas regras do RTDB (isso acontece junto com o crédito a receber), então
+// calculamos no cliente: buscamos pelo índice "mes" já existente numa janela de até 2
+// meses para trás (o máximo que faturaMes + vencimento podem empurrar uma compra —
+// ver CLAUDE.md "Ciclo de fatura" e "Vencimento e mês de desembolso") e filtramos pelo
+// mesDesembolso de cada lançamento (com fallback para registros antigos sem esse campo).
+export async function lerLancamentosPorMesDesembolso(mesAlvo) {
+  const mesesCandidatos = [somarMeses(mesAlvo, -2), somarMeses(mesAlvo, -1), mesAlvo];
+  const listas = await Promise.all(mesesCandidatos.map((mes) => lerLancamentosDoMes(mes)));
+  return listas.flat().filter((lancamento) => obterMesDesembolso(lancamento) === mesAlvo);
 }
 
 export async function criarLancamento(dados) {
