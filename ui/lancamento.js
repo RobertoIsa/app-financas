@@ -4,6 +4,7 @@
 import {
   lerLancamentosDoMes,
   criarLancamento,
+  criarLancamentoComRecebiveis,
   atualizarLancamento,
   atualizarParcelaComCascata,
   salvarParcelasCompra
@@ -13,7 +14,8 @@ import {
   formatCentavos,
   dataHojeISO,
   mesDeData,
-  gerarParcelas
+  gerarParcelas,
+  gerarRecebiveis
 } from "../logic.js";
 
 // Inicializa a tela de lançamento. `deps` traz os dados já carregados pelo app.js
@@ -32,6 +34,11 @@ export function initTelaLancamento({ categorias, membros, cartoes, uid, irParaCa
   const btnIrCartoes = document.getElementById("btn-ir-cartoes");
   const grupoParcelas = document.getElementById("grupo-parcelas");
   const parcelasInput = document.getElementById("lanc-parcelas");
+  const campoParaTerceiro = document.getElementById("campo-para-terceiro");
+  const checkboxParaTerceiro = document.getElementById("lanc-para-terceiro");
+  const grupoTerceiro = document.getElementById("grupo-terceiro");
+  const devedorInput = document.getElementById("lanc-devedor");
+  const numRecebimentosInput = document.getElementById("lanc-num-recebimentos");
   const responsavelSelect = document.getElementById("lanc-responsavel");
   const dataInput = document.getElementById("lanc-data");
   const lancamentoErro = document.getElementById("lancamento-erro");
@@ -120,11 +127,36 @@ export function initTelaLancamento({ categorias, membros, cartoes, uid, irParaCa
     if (isCredito) popularSelectCartao();
   }
 
+  // "Compra para terceiro" só faz sentido em despesas (ver CLAUDE.md "Crédito a
+  // receber") — some junto se o tipo virar receita, e os campos de devedor/nº de
+  // recebimentos só aparecem quando a caixa é marcada.
+  function atualizarVisibilidadeTerceiro() {
+    const isDespesa = tipoSelecionado() === "despesa";
+    campoParaTerceiro.hidden = !isDespesa;
+    if (!isDespesa) checkboxParaTerceiro.checked = false;
+    grupoTerceiro.hidden = !checkboxParaTerceiro.checked || !isDespesa;
+  }
+
   for (const radio of formLancamento.querySelectorAll('input[name="tipo"]')) {
-    radio.addEventListener("change", () => popularSelectCategorias(tipoSelecionado()));
+    radio.addEventListener("change", () => {
+      popularSelectCategorias(tipoSelecionado());
+      atualizarVisibilidadeTerceiro();
+    });
   }
 
   meioSelect.addEventListener("change", atualizarVisibilidadeCredito);
+
+  checkboxParaTerceiro.addEventListener("change", () => {
+    if (checkboxParaTerceiro.checked) {
+      // Default do CLAUDE.md: nº de recebimentos = nº de parcelas da compra (crédito);
+      // 1 se não-crédito. Editável em seguida.
+      const totalParcelasAtual = meioSelect.value === "credito"
+        ? Math.max(1, parseInt(parcelasInput.value, 10) || 1)
+        : 1;
+      numRecebimentosInput.value = totalParcelasAtual;
+    }
+    atualizarVisibilidadeTerceiro();
+  });
 
   btnIrCartoes.addEventListener("click", () => irParaCartoes());
 
@@ -330,6 +362,21 @@ export function initTelaLancamento({ categorias, membros, cartoes, uid, irParaCa
       if (totalParcelas < 1) totalParcelas = 1;
     }
 
+    // "Compra para terceiro" (ver CLAUDE.md "Crédito a receber"): a despesa segue
+    // normal, mas em paralelo nascem os recebíveis espelhando a compra em /receber.
+    const paraTerceiro = tipo === "despesa" && checkboxParaTerceiro.checked;
+    let devedor = null;
+    let numRecebimentos = 1;
+    if (paraTerceiro) {
+      devedor = devedorInput.value.trim();
+      if (!devedor) {
+        lancamentoErro.textContent = "Informe o devedor (quem vai te pagar de volta).";
+        return;
+      }
+      numRecebimentos = parseInt(numRecebimentosInput.value, 10) || 1;
+      if (numRecebimentos < 1) numRecebimentos = 1;
+    }
+
     const agora = Date.now();
 
     const botao = formLancamento.querySelector("button[type=submit]");
@@ -339,8 +386,9 @@ export function initTelaLancamento({ categorias, membros, cartoes, uid, irParaCa
       if (meioPagamento === "credito") {
         // Toda compra no crédito (mesmo à vista) ganha seu idCompra e passa pela
         // engine de ciclo de fatura — ver CLAUDE.md "Ciclo de fatura" e "Parcelamento".
+        const idCompra = `ID-${agora}`;
         const parcelas = gerarParcelas({
-          idCompra: `ID-${agora}`,
+          idCompra,
           dataCompra: data,
           valorCentavos,
           totalParcelas,
@@ -355,7 +403,27 @@ export function initTelaLancamento({ categorias, membros, cartoes, uid, irParaCa
           criadoPor: uid,
           criadoEm: agora
         });
-        await salvarParcelasCompra(parcelas);
+
+        let recebiveis = [];
+        if (paraTerceiro) {
+          const idReembolso = `REEMB-${agora}`;
+          for (const parcela of parcelas) {
+            parcela.paraTerceiro = true;
+            parcela.devedor = devedor;
+            parcela.idReembolso = idReembolso;
+          }
+          recebiveis = gerarRecebiveis({
+            idReembolso,
+            origemIdCompra: idCompra,
+            devedor,
+            numRecebimentos,
+            valorTotalCentavos: valorCentavos * totalParcelas,
+            mesDesembolsoBase: parcelas[0].mesDesembolso,
+            criadoPor: uid,
+            criadoEm: agora
+          });
+        }
+        await salvarParcelasCompra(parcelas, undefined, recebiveis);
       } else {
         const lancamento = {
           tipo,
@@ -367,18 +435,42 @@ export function initTelaLancamento({ categorias, membros, cartoes, uid, irParaCa
           categoriaId,
           meioPagamento,
           responsavel,
+          paraTerceiro: false,
+          devedor: null,
+          idReembolso: null,
           criadoPor: uid,
           criadoEm: agora,
           atualizadoEm: agora,
           pago: true
         };
-        await criarLancamento(lancamento);
+
+        let recebiveis = [];
+        if (paraTerceiro) {
+          const idReembolso = `REEMB-${agora}`;
+          lancamento.paraTerceiro = true;
+          lancamento.devedor = devedor;
+          lancamento.idReembolso = idReembolso;
+          recebiveis = gerarRecebiveis({
+            idReembolso,
+            origemIdCompra: null, // não-crédito não tem idCompra — link é via idReembolso
+            devedor,
+            numRecebimentos,
+            valorTotalCentavos: valorCentavos,
+            mesDesembolsoBase: lancamento.mesDesembolso,
+            criadoPor: uid,
+            criadoEm: agora
+          });
+          await criarLancamentoComRecebiveis(lancamento, recebiveis);
+        } else {
+          await criarLancamento(lancamento);
+        }
       }
       lancamentoSucesso.textContent = "Lançamento salvo!";
       formLancamento.reset();
       dataInput.value = dataHojeISO();
       popularSelectCategorias(tipoSelecionado());
       atualizarVisibilidadeCredito();
+      atualizarVisibilidadeTerceiro();
       await carregarLancamentosDoMes();
     } catch (erro) {
       lancamentoErro.textContent = `Erro ao salvar: ${erro.message || erro.code || "erro desconhecido"}`;
@@ -392,6 +484,7 @@ export function initTelaLancamento({ categorias, membros, cartoes, uid, irParaCa
   popularSelectCategorias(tipoSelecionado());
   popularSelectResponsavel();
   atualizarVisibilidadeCredito();
+  atualizarVisibilidadeTerceiro();
   carregarLancamentosDoMes();
 
   return {

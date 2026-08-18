@@ -5,6 +5,7 @@ import { login, logout, onAuthChange, lerCategorias, lerMembros, lerCartoes } fr
 import { initTelaLancamento } from "./ui/lancamento.js";
 import { initTelaCartoes } from "./ui/cartoes.js";
 import { initTelaMes } from "./ui/mes.js";
+import { initTelaReceber } from "./ui/receber.js";
 
 const telaLogin = document.getElementById("tela-login");
 const telaApp = document.getElementById("tela-app");
@@ -20,6 +21,7 @@ const botoesNav = document.querySelectorAll(".nav-botao");
 const telasPorNome = {
   lancamento: document.getElementById("tela-lancamento"),
   mes: document.getElementById("tela-mes"),
+  receber: document.getElementById("tela-receber"),
   cartoes: document.getElementById("tela-cartoes")
 };
 
@@ -62,6 +64,8 @@ btnSair.addEventListener("click", () => {
   logout();
 });
 
+let receberHandle = null;
+
 function ativarTela(nome) {
   for (const [chave, elemento] of Object.entries(telasPorNome)) {
     elemento.hidden = chave !== nome;
@@ -72,6 +76,11 @@ function ativarTela(nome) {
     } else {
       botao.removeAttribute("aria-current");
     }
+  }
+  // Recarrega "A Receber" sempre que a aba é aberta, pra refletir recebíveis criados
+  // na tela de Lançamento (a tela só carrega uma vez na inicialização, senão).
+  if (nome === "receber" && receberHandle) {
+    receberHandle.recarregar();
   }
 }
 
@@ -103,6 +112,7 @@ async function inicializarTelaApp(uid) {
     });
 
     initTelaMes({ categorias });
+    receberHandle = initTelaReceber({ uid });
   } catch (erro) {
     appErro.textContent = `Erro ao carregar dados: ${erro.message || erro.code || "erro desconhecido"}`;
   }

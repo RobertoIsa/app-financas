@@ -137,12 +137,64 @@ export function gerarParcelas({
       totalParcelas,
       pago: false,
       dataBaixa: null,
+      paraTerceiro: false,
+      devedor: null,
+      idReembolso: null,
       criadoPor,
       criadoEm,
       atualizadoEm: criadoEm
     });
   }
   return parcelas;
+}
+
+// Divide um valor total em N partes inteiras (centavos), jogando a sobra de
+// arredondamento na última parte — usado no crédito a receber quando o nº de
+// recebimentos não bate com o nº de parcelas (ver CLAUDE.md "Crédito a receber").
+export function distribuirValorRecebimentos(valorTotalCentavos, numRecebimentos) {
+  const base = Math.floor(valorTotalCentavos / numRecebimentos);
+  const valores = new Array(numRecebimentos).fill(base);
+  valores[numRecebimentos - 1] += valorTotalCentavos - base * numRecebimentos;
+  return valores;
+}
+
+// Gera os N itens de /receber que espelham uma compra marcada "para terceiro" (ver
+// CLAUDE.md "Crédito a receber (compra para terceiro)"). O mesDesembolso avança
+// exatamente 1 mês por parcela (mesma regra de vencimento do cartão vale pra todas as
+// parcelas de uma compra), então o recebimento i tem mesEsperado = mesDesembolsoBase +
+// (i-1) meses. Quando numRecebimentos == totalParcelas da compra, isso espelha
+// exatamente o mesDesembolso de cada parcela (o default do CLAUDE.md); a extrapolação
+// segue a mesma cadência quando o usuário edita numRecebimentos.
+export function gerarRecebiveis({
+  idReembolso,
+  origemIdCompra,
+  devedor,
+  numRecebimentos,
+  valorTotalCentavos,
+  mesDesembolsoBase,
+  criadoPor,
+  criadoEm
+}) {
+  const valores = distribuirValorRecebimentos(valorTotalCentavos, numRecebimentos);
+  const recebiveis = [];
+  for (let i = 1; i <= numRecebimentos; i++) {
+    recebiveis.push({
+      idReembolso,
+      origemIdCompra,
+      devedor,
+      valorCentavos: valores[i - 1],
+      parcelaAtual: i,
+      totalParcelas: numRecebimentos,
+      mesEsperado: somarMeses(mesDesembolsoBase, i - 1),
+      status: "pendente",
+      dataRecebido: null,
+      lancamentoReceitaId: null,
+      criadoPor,
+      criadoEm,
+      atualizadoEm: criadoEm
+    });
+  }
+  return recebiveis;
 }
 
 // Dada a lista de parcelas existentes de um idCompra e os campos alterados numa parcela

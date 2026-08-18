@@ -503,17 +503,21 @@ Funciona para qualquer mês — passado, atual ou futuro (é o que dá a previsi
 
 **Feito e validado:** login seguro (allowlist), tela de lançamento, cadastro de cartões,
 campos de crédito condicionais, engine de parcelamento + ciclo de fatura (`faturaMes`,
-com virada de ano validada), listagem do mês atual, regras de segurança publicadas.
+com virada de ano validada), tela "Mês" com totais nos dois eixos (desembolso via índice
+`mesDesembolso`, sem mais janela client-side), regras de segurança publicadas com o nó
+`/receber` e os índices `mesEsperado`/`idReembolso`/`origemIdCompra`/`status`.
+
+**Crédito a receber:** implementado de ponta a ponta — checkbox "compra para terceiro" no
+lançamento (crédito e não-crédito) gera despesa + N itens em `/receber` atomicamente
+(`salvarParcelasCompra`/`criarLancamentoComRecebiveis` em `db.js`); painel "A Receber"
+(`ui/receber.js`) lista pendentes por devedor com baixa e desfazer; tela Mês soma
+recebíveis pendentes como entrada PREVISTA (distinta de receita confirmada). Ver
+`gerarRecebiveis`/`distribuirValorRecebimentos` em `logic.js` pra regra de distribuição
+de valor e mês esperado quando `numRecebimentos` diverge do nº de parcelas.
 
 **Próximos passos (nesta ordem):**
-1. **Tela "Mês" (lista + seletor de mês)** com totais nos dois eixos — base de tudo.
-2. **Eixo desembolso:** adicionar `vencimento`/`mesDesembolso` (congelados) aos lançamentos
-   de crédito e passar a projetar por vencimento.
-3. **Crédito a receber:** marcador na despesa + nó `/receber` + painel "A Receber"
-   (requer republicar as regras com o nó `/receber` e os novos índices).
-4. **Projeção / Dashboard** mês a mês (saídas × entradas × saldo projetado).
-5. **Recorrências.**
-6. **PWA + deploy no Vercel** (instalar no celular).
+1. **Recorrências.**
+2. **PWA + deploy no Vercel** (instalar no celular).
 
 **Ajustes finos anotados:** rótulo "Valor da parcela" no crédito parcelado; melhorar o
 campo de data (fácil esquecer de trocar o dia).

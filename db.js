@@ -22,7 +22,7 @@ import {
   equalTo
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-database.js";
 import { firebaseConfig } from "./firebase-config.js";
-import { calcularCascata, somarMeses, obterMesDesembolso } from "./logic.js";
+import { calcularCascata, mesDeData } from "./logic.js";
 
 const app = initializeApp(firebaseConfig);
 
@@ -75,21 +75,34 @@ export async function lerLancamentosDoMes(mes) {
 }
 
 // Lê os lançamentos cujo mesDesembolso (eixo PRINCIPAL — ver CLAUDE.md "Os dois eixos
-// de tempo") é igual a `mesAlvo`. O índice ".indexOn" de mesDesembolso ainda não foi
-// republicado nas regras do RTDB (isso acontece junto com o crédito a receber), então
-// calculamos no cliente: buscamos pelo índice "mes" já existente numa janela de até 2
-// meses para trás (o máximo que faturaMes + vencimento podem empurrar uma compra —
-// ver CLAUDE.md "Ciclo de fatura" e "Vencimento e mês de desembolso") e filtramos pelo
-// mesDesembolso de cada lançamento (com fallback para registros antigos sem esse campo).
+// de tempo") é igual a `mesAlvo`, usando o índice ".indexOn" de mesDesembolso já
+// publicado nas regras do RTDB.
 export async function lerLancamentosPorMesDesembolso(mesAlvo) {
-  const mesesCandidatos = [somarMeses(mesAlvo, -2), somarMeses(mesAlvo, -1), mesAlvo];
-  const listas = await Promise.all(mesesCandidatos.map((mes) => lerLancamentosDoMes(mes)));
-  return listas.flat().filter((lancamento) => obterMesDesembolso(lancamento) === mesAlvo);
+  const consulta = query(ref(db, "lancamentos"), orderByChild("mesDesembolso"), equalTo(mesAlvo));
+  const snapshot = await get(consulta);
+  if (!snapshot.exists()) return [];
+  const dados = snapshot.val();
+  return Object.entries(dados).map(([id, valor]) => ({ id, ...valor }));
 }
 
 export async function criarLancamento(dados) {
   const novaRef = push(ref(db, "lancamentos"));
   await set(novaRef, dados);
+  return novaRef.key;
+}
+
+// Grava um lançamento não-crédito (ou qualquer lançamento avulso) junto com os itens
+// de /receber que ele gera, quando marcado "compra para terceiro" — ver CLAUDE.md
+// "Crédito a receber". Uma única operação atômica (update multi-caminho).
+export async function criarLancamentoComRecebiveis(lancamento, recebiveis = []) {
+  const atualizacoes = {};
+  const novaRef = push(ref(db, "lancamentos"));
+  atualizacoes[`lancamentos/${novaRef.key}`] = lancamento;
+  for (const recebivel of recebiveis) {
+    const recebivelRef = push(ref(db, "receber"));
+    atualizacoes[`receber/${recebivelRef.key}`] = recebivel;
+  }
+  await update(ref(db), atualizacoes);
   return novaRef.key;
 }
 
@@ -109,8 +122,10 @@ export async function lerLancamentosPorIdCompra(idCompra) {
 // Grava todas as parcelas de uma compra no crédito numa única operação atômica
 // (update multi-caminho — ver CLAUDE.md "Controle de concorrência"). Se idCompraExistente
 // for informado, apaga antes as parcelas antigas desse idCompra, para reeditar uma compra
-// (mudar total de parcelas, valor etc.) sem duplicar — idempotência.
-export async function salvarParcelasCompra(parcelas, idCompraExistente) {
+// (mudar total de parcelas, valor etc.) sem duplicar — idempotência. `recebiveis`
+// (opcional) grava junto os itens de /receber gerados por uma compra "para terceiro" —
+// ver CLAUDE.md "Crédito a receber".
+export async function salvarParcelasCompra(parcelas, idCompraExistente, recebiveis = []) {
   const atualizacoes = {};
 
   if (idCompraExistente) {
@@ -123,6 +138,11 @@ export async function salvarParcelasCompra(parcelas, idCompraExistente) {
   for (const parcela of parcelas) {
     const novaRef = push(ref(db, "lancamentos"));
     atualizacoes[`lancamentos/${novaRef.key}`] = parcela;
+  }
+
+  for (const recebivel of recebiveis) {
+    const recebivelRef = push(ref(db, "receber"));
+    atualizacoes[`receber/${recebivelRef.key}`] = recebivel;
   }
 
   await update(ref(db), atualizacoes);
@@ -178,4 +198,76 @@ export async function existeLancamentoComCartao(cartaoId) {
   const consulta = query(ref(db, "lancamentos"), orderByChild("cartaoId"), equalTo(cartaoId));
   const snapshot = await get(consulta);
   return snapshot.exists();
+}
+
+// Lê /receber filtrados por status ("pendente" | "recebido"), usando o índice "status".
+export async function lerRecebiveisPorStatus(status) {
+  const consulta = query(ref(db, "receber"), orderByChild("status"), equalTo(status));
+  const snapshot = await get(consulta);
+  if (!snapshot.exists()) return [];
+  const dados = snapshot.val();
+  return Object.entries(dados).map(([id, valor]) => ({ id, ...valor }));
+}
+
+// Lê /receber cujo mesEsperado é o mês alvo (índice "mesEsperado") — usado na projeção
+// da tela Mês pra somar as entradas PREVISTAS (recebíveis pendentes) do eixo desembolso.
+export async function lerRecebiveisPorMesEsperado(mes) {
+  const consulta = query(ref(db, "receber"), orderByChild("mesEsperado"), equalTo(mes));
+  const snapshot = await get(consulta);
+  if (!snapshot.exists()) return [];
+  const dados = snapshot.val();
+  return Object.entries(dados).map(([id, valor]) => ({ id, ...valor }));
+}
+
+// Reprograma um recebível pendente (ex.: mesEsperado editado manualmente).
+export async function atualizarRecebivel(id, dados) {
+  await update(ref(db, `receber/${id}`), { ...dados, atualizadoEm: Date.now() });
+}
+
+// Baixa de um recebível: marca status "recebido" + dataRecebido, e gera a receita real
+// em /lancamentos (categoria recebimentos_terceiros — ver CLAUDE.md "Crédito a
+// receber"), numa única operação atômica (update multi-caminho).
+export async function marcarRecebivelRecebido(recebivel, dataRecebidoISO, uid) {
+  const agora = Date.now();
+  const novaReceitaRef = push(ref(db, "lancamentos"));
+  const receita = {
+    tipo: "receita",
+    data: dataRecebidoISO,
+    mes: mesDeData(dataRecebidoISO),
+    mesDesembolso: mesDeData(dataRecebidoISO),
+    valorCentavos: recebivel.valorCentavos,
+    descricao: `Recebimento de ${recebivel.devedor}`,
+    categoriaId: "recebimentos_terceiros",
+    meioPagamento: "transferencia",
+    responsavel: "casal",
+    idReembolso: recebivel.idReembolso,
+    criadoPor: uid,
+    criadoEm: agora,
+    atualizadoEm: agora,
+    pago: true
+  };
+  const atualizacoes = {
+    [`lancamentos/${novaReceitaRef.key}`]: receita,
+    [`receber/${recebivel.id}/status`]: "recebido",
+    [`receber/${recebivel.id}/dataRecebido`]: dataRecebidoISO,
+    [`receber/${recebivel.id}/lancamentoReceitaId`]: novaReceitaRef.key,
+    [`receber/${recebivel.id}/atualizadoEm`]: agora
+  };
+  await update(ref(db), atualizacoes);
+}
+
+// Desfaz a baixa de um recebível: apaga a receita gerada em /lancamentos e volta o
+// item de /receber para "pendente", numa única operação atômica.
+export async function desfazerRecebimento(recebivel) {
+  const agora = Date.now();
+  const atualizacoes = {
+    [`receber/${recebivel.id}/status`]: "pendente",
+    [`receber/${recebivel.id}/dataRecebido`]: null,
+    [`receber/${recebivel.id}/lancamentoReceitaId`]: null,
+    [`receber/${recebivel.id}/atualizadoEm`]: agora
+  };
+  if (recebivel.lancamentoReceitaId) {
+    atualizacoes[`lancamentos/${recebivel.lancamentoReceitaId}`] = null;
+  }
+  await update(ref(db), atualizacoes);
 }

@@ -38,6 +38,7 @@
       <nav class="app-nav" aria-label="Navegação principal">
         <button type="button" class="nav-botao" data-tela="lancamento" aria-current="page">Lançar</button>
         <button type="button" class="nav-botao" data-tela="mes">Mês</button>
+        <button type="button" class="nav-botao" data-tela="receber">A Receber</button>
         <button type="button" class="nav-botao" data-tela="cartoes">Cartões</button>
       </nav>
 
@@ -99,6 +100,24 @@
             <input type="number" id="lanc-parcelas" min="1" max="60" step="1" value="1" inputmode="numeric">
           </div>
 
+          <div class="campo campo-checkbox" id="campo-para-terceiro" hidden>
+            <label class="checkbox-label">
+              <input type="checkbox" id="lanc-para-terceiro">
+              <span>Compra para terceiro (alguém vai te pagar de volta)</span>
+            </label>
+          </div>
+
+          <div id="grupo-terceiro" hidden>
+            <div class="campo">
+              <label for="lanc-devedor">Devedor</label>
+              <input type="text" id="lanc-devedor" placeholder="Ex.: Irmão" autocomplete="off">
+            </div>
+            <div class="campo">
+              <label for="lanc-num-recebimentos">Nº de recebimentos</label>
+              <input type="number" id="lanc-num-recebimentos" min="1" max="60" step="1" value="1" inputmode="numeric">
+            </div>
+          </div>
+
           <div class="campo">
             <label for="lanc-responsavel">Responsável</label>
             <select id="lanc-responsavel" required></select>
@@ -150,6 +169,10 @@
               <span class="mes-resumo-rotulo" title="Quanto foi gasto neste mês, independente de quando a fatura vence.">Gasto no mês (competência)</span>
               <span id="mes-resumo-gasto" class="mes-resumo-valor">—</span>
             </div>
+            <div class="mes-resumo-item">
+              <span class="mes-resumo-rotulo" title="Recebíveis pendentes (compras para terceiros) com mês esperado neste mês — já incluídos em 'Vai entrar na conta'.">A receber (previsto)</span>
+              <span id="mes-resumo-previsto" class="mes-resumo-valor">—</span>
+            </div>
           </div>
           <p class="mes-legenda">
             <strong>Vai sair/entrar da conta</strong> = desembolso: quando o dinheiro
@@ -164,6 +187,26 @@
           <h2 id="mes-lista-titulo">Lançamentos do mês (competência)</h2>
           <p id="mes-lista-status" role="status" aria-live="polite"></p>
           <ul id="mes-lista-lancamentos"></ul>
+        </section>
+
+        <section aria-labelledby="mes-previstos-titulo" id="mes-previstos-secao" hidden>
+          <h2 id="mes-previstos-titulo">Entradas previstas (a receber)</h2>
+          <ul id="mes-lista-previstos"></ul>
+        </section>
+      </div>
+
+      <div id="tela-receber" hidden>
+        <section aria-labelledby="receber-titulo">
+          <h2 id="receber-titulo">A Receber</h2>
+          <p id="receber-status" role="status" aria-live="polite"></p>
+          <div id="receber-totais" class="receber-totais"></div>
+          <div id="receber-lista"></div>
+        </section>
+
+        <section aria-labelledby="receber-recebidos-titulo">
+          <h2 id="receber-recebidos-titulo">Recebidos recentemente</h2>
+          <p id="receber-recebidos-status" role="status" aria-live="polite"></p>
+          <ul id="receber-recebidos-lista"></ul>
         </section>
       </div>
 

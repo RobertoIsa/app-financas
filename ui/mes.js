@@ -3,7 +3,7 @@
 // selecionado (eixo GASTO/competência) e mostra os totais nos dois eixos de tempo
 // (ver CLAUDE.md "Os dois eixos de tempo" e "Projeção mês a mês").
 
-import { lerLancamentosDoMes, lerLancamentosPorMesDesembolso } from "../db.js";
+import { lerLancamentosDoMes, lerLancamentosPorMesDesembolso, lerRecebiveisPorMesEsperado } from "../db.js";
 import { formatCentavos, mesDeData, dataHojeISO, somarMeses } from "../logic.js";
 
 const NOMES_MES = [
@@ -29,9 +29,13 @@ export function initTelaMes({ categorias }) {
   const elGasto = document.getElementById("mes-resumo-gasto");
   const elEntradas = document.getElementById("mes-resumo-entradas");
   const elSaldo = document.getElementById("mes-resumo-saldo");
+  const elPrevisto = document.getElementById("mes-resumo-previsto");
 
   const statusEl = document.getElementById("mes-lista-status");
   const listaEl = document.getElementById("mes-lista-lancamentos");
+
+  const previstosSecao = document.getElementById("mes-previstos-secao");
+  const listaPrevistosEl = document.getElementById("mes-lista-previstos");
 
   let categoriasCache = categorias;
   let mesSelecionado = mesDeData(dataHojeISO());
@@ -77,22 +81,62 @@ export function initTelaMes({ categorias }) {
     return item;
   }
 
+  function criarItemPrevisto(recebivel) {
+    const item = document.createElement("li");
+    item.className = "lanc-item";
+
+    const linha = document.createElement("div");
+    linha.className = "lanc-item-linha";
+
+    const desc = document.createElement("span");
+    desc.className = "lanc-desc";
+    let texto = recebivel.devedor;
+    if (recebivel.totalParcelas > 1) {
+      texto += ` (${recebivel.parcelaAtual}/${recebivel.totalParcelas})`;
+    }
+    desc.textContent = texto;
+
+    const valor = document.createElement("span");
+    valor.className = "lanc-valor lanc-receita";
+    valor.textContent = `+ ${formatCentavos(recebivel.valorCentavos)}`;
+
+    linha.appendChild(desc);
+    linha.appendChild(valor);
+    item.appendChild(linha);
+
+    const badge = document.createElement("span");
+    badge.className = "badge-previsto";
+    badge.textContent = "Previsto · a receber";
+    item.appendChild(badge);
+
+    return item;
+  }
+
   async function carregar() {
     const meuPedido = ++pedidoAtual;
     rotulo.textContent = formatarMes(mesSelecionado);
     statusEl.textContent = "Carregando lançamentos...";
     listaEl.innerHTML = "";
+    listaPrevistosEl.innerHTML = "";
+    previstosSecao.hidden = true;
     elDesembolso.textContent = "—";
     elGasto.textContent = "—";
     elEntradas.textContent = "—";
     elSaldo.textContent = "—";
+    elPrevisto.textContent = "—";
 
     try {
-      const [lancamentosDoMes, lancamentosDesembolso] = await Promise.all([
+      const [lancamentosDoMes, lancamentosDesembolso, recebiveisDoMes] = await Promise.all([
         lerLancamentosDoMes(mesSelecionado),
-        lerLancamentosPorMesDesembolso(mesSelecionado)
+        lerLancamentosPorMesDesembolso(mesSelecionado),
+        lerRecebiveisPorMesEsperado(mesSelecionado)
       ]);
       if (meuPedido !== pedidoAtual) return; // usuário já navegou pra outro mês
+
+      // Só recebíveis PENDENTES entram como entrada PREVISTA — os já recebidos viraram
+      // receita real em /lancamentos e já estão contados em lancamentosDesembolso
+      // (ver CLAUDE.md "Crédito a receber": pendente ≠ receita).
+      const recebiveisPendentes = recebiveisDoMes.filter((r) => r.status === "pendente");
 
       const gastoCompetencia = lancamentosDoMes
         .filter((l) => l.tipo === "despesa")
@@ -102,18 +146,29 @@ export function initTelaMes({ categorias }) {
         .filter((l) => l.tipo === "despesa")
         .reduce((soma, l) => soma + l.valorCentavos, 0);
 
-      const entradasDesembolso = lancamentosDesembolso
+      const entradasConfirmadas = lancamentosDesembolso
         .filter((l) => l.tipo === "receita")
         .reduce((soma, l) => soma + l.valorCentavos, 0);
 
-      const saldo = entradasDesembolso - saidasDesembolso;
+      const entradasPrevistas = recebiveisPendentes.reduce((soma, r) => soma + r.valorCentavos, 0);
+      const entradasTotais = entradasConfirmadas + entradasPrevistas;
+
+      const saldo = entradasTotais - saidasDesembolso;
 
       elDesembolso.textContent = formatCentavos(saidasDesembolso);
       elGasto.textContent = formatCentavos(gastoCompetencia);
-      elEntradas.textContent = formatCentavos(entradasDesembolso);
+      elEntradas.textContent = formatCentavos(entradasTotais);
+      elPrevisto.textContent = formatCentavos(entradasPrevistas);
       elSaldo.textContent = formatCentavos(saldo);
       elSaldo.classList.toggle("lanc-despesa", saldo < 0);
       elSaldo.classList.toggle("lanc-receita", saldo >= 0);
+
+      if (recebiveisPendentes.length > 0) {
+        previstosSecao.hidden = false;
+        for (const recebivel of recebiveisPendentes) {
+          listaPrevistosEl.appendChild(criarItemPrevisto(recebivel));
+        }
+      }
 
       if (lancamentosDoMes.length === 0) {
         statusEl.textContent = "Nenhum lançamento neste mês.";
