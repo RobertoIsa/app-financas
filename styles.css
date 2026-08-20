@@ -615,22 +615,24 @@ section + section {
   }
 }
 @media (max-width: 768px) {
-  /* Oculta o e-mail no cabeçalho no celular */
-  #info-usuario span {
+  /* Oculta o e-mail no cabeçalho */
+  #usuario-email {
     display: none;
   }
 
-  /* Cria rolagem horizontal no menu de navegação */
-  nav ul {
+  /* Transforma o menu em uma linha rolável horizontal */
+  .app-nav {
     display: flex;
     flex-wrap: nowrap;
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
-    gap: 15px;
-    padding-bottom: 5px;
+    gap: 10px;
+    padding-bottom: 10px;
   }
 
-  nav ul li {
+  /* Impede que os botões encolham e quebrem o texto */
+  .nav-botao {
     flex: 0 0 auto;
+    white-space: nowrap;
   }
 }
