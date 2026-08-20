@@ -271,3 +271,135 @@ export async function desfazerRecebimento(recebivel) {
   }
   await update(ref(db), atualizacoes);
 }
+
+// Lê /recorrencias e devolve como lista [{ id, descricao, ... }] — ver CLAUDE.md
+// "Recorrência (contas e receitas mensais)".
+export async function lerRecorrencias() {
+  const snapshot = await get(ref(db, "recorrencias"));
+  if (!snapshot.exists()) return [];
+  const dados = snapshot.val();
+  return Object.entries(dados).map(([id, valor]) => ({ id, ...valor }));
+}
+
+export async function criarRecorrencia(dados) {
+  const novaRef = push(ref(db, "recorrencias"));
+  await set(novaRef, dados);
+  return novaRef.key;
+}
+
+// Atualiza uma regra de recorrência (edição de valor/categoria/dia, ou encerrar —
+// ativo:false / fim). Afeta só as ocorrências FUTURAS (as já materializadas em
+// /lancamentos ficam como estão — ver CLAUDE.md).
+export async function atualizarRecorrencia(id, dados) {
+  await update(ref(db, `recorrencias/${id}`), { ...dados, atualizadoEm: Date.now() });
+}
+
+// Materializa a ocorrência (virtual, vinda de logic.js `gerarOcorrenciaRecorrencia`) de
+// uma regra num mês, gravando o lançamento real em /lancamentos com idRecorrencia
+// apontando de volta pra regra. IDEMPOTÊNCIA é responsabilidade de quem chama: deve
+// checar antes que não existe, no mês, nenhum lançamento com o mesmo idRecorrencia
+// (ver ui/mes.js) — aqui só grava.
+export async function materializarOcorrencia(ocorrencia, uid) {
+  const agora = Date.now();
+  const { virtual, id, ...dadosOcorrencia } = ocorrencia;
+  const lancamento = {
+    ...dadosOcorrencia,
+    criadoPor: uid,
+    criadoEm: agora,
+    atualizadoEm: agora
+  };
+  return criarLancamento(lancamento);
+}
+// Lê todas as despesas atreladas a uma fatura específica (independentemente de estarem pagas ou não)
+export async function lerLancamentosDaFatura(faturaMes, cartaoId) {
+  const consulta = query(ref(db, "lancamentos"), orderByChild("faturaMes"), equalTo(faturaMes));
+  const snapshot = await get(consulta);
+  
+  if (!snapshot.exists()) return [];
+  
+  const dados = snapshot.val();
+  
+  return Object.entries(dados)
+    .map(([id, valor]) => ({ id, ...valor }))
+    .filter(lanc => lanc.cartaoId === cartaoId && lanc.tipo === 'despesa');
+}
+// Registra o pagamento da fatura em lote com observabilidade
+export async function pagarFaturaEmLote(lancamentosIds, totalCentavos, faturaMes, dataPagamento, meioPagamento, uid) {
+  const atualizacoes = {};
+  const agora = Date.now();
+
+  console.log("🔥 [FIREBASE] Iniciando pagamento em lote. IDs das compras:", lancamentosIds);
+
+  // 1. Marca cada compra da fatura como paga
+  lancamentosIds.forEach(id => {
+    atualizacoes[`lancamentos/${id}/pago`] = true;
+    atualizacoes[`lancamentos/${id}/atualizadoEm`] = agora;
+  });
+
+  // 2. Cria o registro de desembolso no caixa
+  const novaRef = push(ref(db, "lancamentos"));
+  const mesDesembolso = dataPagamento.substring(0, 7);
+
+  atualizacoes[`lancamentos/${novaRef.key}`] = {
+    descricao: `Pagamento Fatura ${faturaMes}`,
+    valorCentavos: totalCentavos,
+    tipo: 'despesa',
+    mes: mesDesembolso,
+    mesDesembolso: mesDesembolso,
+    data: dataPagamento,
+    meioPagamento: meioPagamento,
+    categoriaId: 'pagamento_cartao',
+    responsavel: 'casal',
+    pago: true,
+    criadoPor: uid,
+    criadoEm: agora,
+    atualizadoEm: agora
+  };
+
+  console.log("📦 [FIREBASE] Pacote montado para envio:", atualizacoes);
+
+  try {
+    // Dispara tudo de uma vez
+    await update(ref(db), atualizacoes);
+    console.log("✅ [FIREBASE] Servidor confirmou a gravação atômica com sucesso.");
+  } catch (erro) {
+    console.error("❌ [FIREBASE] REJEIÇÃO CRÍTICA DO SERVIDOR:", erro);
+    throw erro; // Joga o erro de volta para a tela do aplicativo
+  }
+}
+// Exclui um lançamento do banco. Se for um "pagamento_fatura", realiza o estorno atômico
+// (apaga a despesa e reverte o status "pago" das compras daquela fatura).
+export async function excluirLancamento(lancamento) {
+  // Lógica de estorno para pagamento de faturas
+  if (lancamento.categoriaId === 'pagamento_cartao') {
+    const atualizacoes = {};
+    const faturaMes = lancamento.descricao.split(" ")[2]; // Extrai "2026-08" de "Pagamento Fatura 2026-08"
+
+    // 1. Busca todas as compras vinculadas àquela fatura que estão pagas
+    const consulta = query(ref(db, "lancamentos"), orderByChild("faturaMes"), equalTo(faturaMes));
+    const snapshot = await get(consulta);
+    
+    if (snapshot.exists()) {
+      const dados = snapshot.val();
+      const agora = Date.now();
+      
+      // 2. Reverte o status das compras para pendente
+      Object.entries(dados).forEach(([id, compra]) => {
+         if(compra.pago === true && compra.tipo === 'despesa' && compra.categoriaId !== 'pagamento_cartao'){
+             atualizacoes[`lancamentos/${id}/pago`] = false;
+             atualizacoes[`lancamentos/${id}/atualizadoEm`] = agora;
+         }
+      });
+    }
+
+    // 3. Remove o lançamento do pagamento em si
+    atualizacoes[`lancamentos/${lancamento.id}`] = null;
+
+    // 4. Executa a reversão atômica
+    await update(ref(db), atualizacoes);
+    return;
+  }
+
+  // Comportamento padrão para exclusões normais
+  await remove(ref(db, `lancamentos/${lancamento.id}`));
+}

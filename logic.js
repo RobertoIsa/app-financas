@@ -62,8 +62,9 @@ export function calcularFaturaMes(dataCompraISO, diaFechamento) {
 }
 
 // Quantidade de dias de um mês YYYY-MM (usado para não gerar datas inválidas como
-// "2026-02-31" quando o diaVencimento do cartão não existe no mês de destino).
-function diasNoMes(mesISO) {
+// "2026-02-31" quando o diaVencimento do cartão não existe no mês de destino, ou
+// quando o diaDoMes de uma recorrência não existe no mês — ver "Recorrência").
+export function diasNoMes(mesISO) {
   const [ano, mes] = mesISO.split("-").map(Number);
   return new Date(ano, mes, 0).getDate();
 }
@@ -204,4 +205,86 @@ export function calcularCascata(parcelasExistentes, parcelaEditadaAtual, camposA
   return parcelasExistentes
     .filter((parcela) => parcela.parcelaAtual > parcelaEditadaAtual && !parcela.pago)
     .map((parcela) => ({ id: parcela.id, mudancas: { ...camposAlterados } }));
+}
+
+// --- Recorrência (regra + projeção virtual — ver CLAUDE.md "Recorrência (contas e
+// receitas mensais)"). A regra é gravada uma vez em /recorrencias; meses futuros são
+// projetados virtualmente aqui (nada é gravado) e o mês corrente é materializado em
+// /lancamentos (ver db.js materializarOcorrencia). ---
+
+// Uma regra está ativa num mês M (YYYY-MM) se M >= inicio, (fim é null ou M <= fim) e
+// ativo !== false. Comparação lexicográfica de strings YYYY-MM funciona como comparação
+// cronológica (mesmo formato, mesmo nº de dígitos).
+export function recorrenciaAtivaNoMes(regra, mes) {
+  if (regra.ativo === false) return false;
+  if (regra.inicio && mes < regra.inicio) return false;
+  if (regra.fim && mes > regra.fim) return false;
+  return true;
+}
+
+// Gera a ocorrência de uma regra de recorrência num mês de competência `mes` — os
+// mesmos campos de um lançamento normal, prontos tanto para exibição virtual quanto
+// para materialização (ver db.js). diaDoMes maior que os dias do mês (ex.: 31 em
+// fevereiro) vira o último dia do mês. Quando a regra é no crédito, reusa a engine de
+// ciclo de fatura (calcularFaturaMes/calcularVencimentoEDesembolso) com o `cartao`
+// informado — mesma regra de uma compra normal (ver CLAUDE.md "Ciclo de fatura");
+// sem crédito, o desembolso é imediato (mesDesembolso = mes).
+export function gerarOcorrenciaRecorrencia(regra, mes, cartao) {
+  const dia = Math.min(regra.diaDoMes, diasNoMes(mes));
+  const data = `${mes}-${String(dia).padStart(2, "0")}`;
+
+  const base = {
+    tipo: regra.tipo,
+    data,
+    mes,
+    descricao: regra.descricao,
+    valorCentavos: regra.valorCentavos,
+    categoriaId: regra.categoriaId,
+    meioPagamento: regra.meioPagamento,
+    cartaoId: regra.cartaoId || null,
+    responsavel: regra.responsavel,
+    paraTerceiro: false,
+    devedor: null,
+    idReembolso: null,
+    idRecorrencia: regra.id
+  };
+
+  if (regra.meioPagamento === "credito" && cartao) {
+    const faturaMes = calcularFaturaMes(data, cartao.diaFechamento);
+    const { vencimento, mesDesembolso } = calcularVencimentoEDesembolso({
+      faturaMes,
+      diaFechamento: cartao.diaFechamento,
+      diaVencimento: cartao.diaVencimento
+    });
+    return { ...base, faturaMes, vencimento, mesDesembolso, pago: false, dataBaixa: null };
+  }
+
+  return { ...base, mesDesembolso: mes, pago: true, dataBaixa: null };
+}
+
+// Projeção virtual (NÃO grava nada) das ocorrências de todas as regras ativas num mês
+// de competência `mesAlvo` — ver CLAUDE.md "Recorrência": horizonte é escolha de quem
+// exibe, calculado na hora. `cartoesPorId` é um objeto/Map id->cartão, usado só pelas
+// regras no crédito. Cada ocorrência ganha a flag `virtual: true`.
+export function projetarOcorrenciasDoMes(regras, mesAlvo, cartoesPorId = {}) {
+  return regras
+    .filter((regra) => recorrenciaAtivaNoMes(regra, mesAlvo))
+    .map((regra) => ({
+      ...gerarOcorrenciaRecorrencia(regra, mesAlvo, cartoesPorId[regra.cartaoId]),
+      virtual: true
+    }));
+}
+
+// Ocorrências virtuais cujo DESEMBOLSO (eixo PRINCIPAL) cai em `mesAlvo`: inclui as de
+// competência mesAlvo (não-crédito, ou crédito que não empurra o mês) e as de
+// competência do mês anterior quando o ciclo de fatura empurra o vencimento pra
+// mesAlvo (ver CLAUDE.md "Vencimento e mês de desembolso" — o desembolso de uma compra
+// em T só pode cair em T ou T+1, nunca além, então só é preciso olhar 1 mês pra trás).
+export function projetarOcorrenciasPorDesembolso(regras, mesAlvo, cartoesPorId = {}) {
+  const mesAnterior = somarMeses(mesAlvo, -1);
+  const candidatos = [
+    ...projetarOcorrenciasDoMes(regras, mesAlvo, cartoesPorId),
+    ...projetarOcorrenciasDoMes(regras, mesAnterior, cartoesPorId)
+  ];
+  return candidatos.filter((ocorrencia) => ocorrencia.mesDesembolso === mesAlvo);
 }

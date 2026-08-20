@@ -515,9 +515,22 @@ recebíveis pendentes como entrada PREVISTA (distinta de receita confirmada). Ve
 `gerarRecebiveis`/`distribuirValorRecebimentos` em `logic.js` pra regra de distribuição
 de valor e mês esperado quando `numRecebimentos` diverge do nº de parcelas.
 
-**Próximos passos (nesta ordem):**
-1. **Recorrências.**
-2. **PWA + deploy no Vercel** (instalar no celular).
+**Recorrências:** implementado pelo método regra + projeção virtual (nada gravado pra
+meses futuros). Tela "Recorrências" (`ui/recorrencias.js`) é CRUD puro da regra em
+`/recorrencias`; editar nunca reativa uma regra encerrada sozinho (é ação separada). A
+projeção e a materialização vivem na tela Mês (`ui/mes.js`), que a cada carregamento lê
+`/recorrencias` e `/cartoes` do zero: pra mês atual/passado, materializa (uma vez, via
+`db.js` `materializarOcorrencia`) as ocorrências ainda sem lançamento real — idempotência
+checada por `idRecorrencia` dentro dos lançamentos já lidos do mês (índice `mes`, sem
+precisar de índice novo); pra mês futuro, projeta virtualmente (`logic.js`
+`projetarOcorrenciasDoMes`/`projetarOcorrenciasPorDesembolso`) e soma nos dois eixos sem
+gravar. Regra no crédito reusa a engine de ciclo de fatura (`calcularFaturaMes`/
+`calcularVencimentoEDesembolso`); `diaDoMes` maior que os dias do mês vira o último dia.
+**Pendente:** publicar no console a regra de escrita de `/recorrencias` (já está no bloco
+de `rules` deste arquivo) — sem isso, criar recorrência falha com permissão negada.
+
+**Próximos passos:**
+1. **PWA + deploy no Vercel** (instalar no celular).
 
 **Ajustes finos anotados:** rótulo "Valor da parcela" no crédito parcelado; melhorar o
 campo de data (fácil esquecer de trocar o dia).

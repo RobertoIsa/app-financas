@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Controle Financeiro</title>
   <link rel="stylesheet" href="styles.css">
+  <link rel="manifest" href="manifest.json">
 </head>
 <body>
   <main>
@@ -40,6 +41,8 @@
         <button type="button" class="nav-botao" data-tela="mes">Mês</button>
         <button type="button" class="nav-botao" data-tela="receber">A Receber</button>
         <button type="button" class="nav-botao" data-tela="cartoes">Cartões</button>
+        <button type="button" class="nav-botao" data-tela="faturas">Faturas</button> <!-- NOVO BOTÃO -->
+        <button type="button" class="nav-botao" data-tela="recorrencias">Recorrências</button>
       </nav>
 
       <div id="tela-lancamento">
@@ -173,6 +176,10 @@
               <span class="mes-resumo-rotulo" title="Recebíveis pendentes (compras para terceiros) com mês esperado neste mês — já incluídos em 'Vai entrar na conta'.">A receber (previsto)</span>
               <span id="mes-resumo-previsto" class="mes-resumo-valor">—</span>
             </div>
+            <div class="mes-resumo-item" id="mes-resumo-recorrente-item" hidden>
+              <span class="mes-resumo-rotulo" title="Ocorrências futuras de recorrências (salário, aluguel, assinaturas) projetadas virtualmente, ainda não lançadas — já incluídas em 'Vai sair/entrar da conta'.">Recorrências (previsto, líquido)</span>
+              <span id="mes-resumo-recorrente" class="mes-resumo-valor">—</span>
+            </div>
           </div>
           <p class="mes-legenda">
             <strong>Vai sair/entrar da conta</strong> = desembolso: quando o dinheiro
@@ -181,6 +188,7 @@
             quando há compras no cartão — a compra é de um mês, mas a fatura vence
             no mês seguinte (ou depois).
           </p>
+          <p id="mes-recorrencia-status" role="status" aria-live="polite" class="aviso"></p>
         </section>
 
         <section aria-labelledby="mes-lista-titulo">
@@ -192,6 +200,11 @@
         <section aria-labelledby="mes-previstos-titulo" id="mes-previstos-secao" hidden>
           <h2 id="mes-previstos-titulo">Entradas previstas (a receber)</h2>
           <ul id="mes-lista-previstos"></ul>
+        </section>
+
+        <section aria-labelledby="mes-recorrentes-titulo" id="mes-recorrentes-secao" hidden>
+          <h2 id="mes-recorrentes-titulo">Recorrências previstas (mês futuro, ainda não lançadas)</h2>
+          <ul id="mes-lista-recorrentes"></ul>
         </section>
       </div>
 
@@ -248,6 +261,145 @@
           <h2 id="cartao-lista-titulo">Cartões cadastrados</h2>
           <p id="cartoes-status" role="status" aria-live="polite"></p>
           <ul id="lista-cartoes"></ul>
+        </section>
+      </div>
+
+      <div id="tela-recorrencias" hidden>
+        <section aria-labelledby="recorrencia-form-titulo">
+          <h2 id="recorrencia-form-titulo">Recorrências</h2>
+          <p class="mes-legenda">
+            Itens que se repetem todo mês (salário, aluguel, assinaturas). A regra é
+            guardada uma vez e projetada nos meses futuros sem gravar cópias; o mês
+            atual/passado é lançado automaticamente na tela "Mês".
+          </p>
+          <form id="form-recorrencia" novalidate>
+            <div class="campo">
+              <span id="rec-tipo-label">Tipo</span>
+              <div class="toggle-grupo" role="radiogroup" aria-labelledby="rec-tipo-label">
+                <label class="toggle-opcao">
+                  <input type="radio" name="rec-tipo" value="despesa" checked>
+                  <span>Despesa</span>
+                </label>
+                <label class="toggle-opcao">
+                  <input type="radio" name="rec-tipo" value="receita">
+                  <span>Receita</span>
+                </label>
+              </div>
+            </div>
+
+            <div class="campo">
+              <label for="rec-descricao">Descrição</label>
+              <input type="text" id="rec-descricao" placeholder="Ex.: Aluguel" autocomplete="off" required>
+            </div>
+
+            <div class="campo">
+              <label for="rec-valor">Valor (R$)</label>
+              <input type="text" id="rec-valor" inputmode="decimal" placeholder="0,00" autocomplete="off" required>
+            </div>
+
+            <div class="campo">
+              <label for="rec-categoria">Categoria</label>
+              <select id="rec-categoria" required></select>
+            </div>
+
+            <div class="campo">
+              <label for="rec-meio">Meio de pagamento</label>
+              <select id="rec-meio" required>
+                <option value="pix">Pix</option>
+                <option value="debito">Débito</option>
+                <option value="dinheiro">Dinheiro</option>
+                <option value="transferencia">Transferência</option>
+                <option value="credito">Crédito</option>
+              </select>
+            </div>
+
+            <div class="campo" id="grupo-rec-cartao" hidden>
+              <label for="rec-cartao">Cartão</label>
+              <select id="rec-cartao"></select>
+            </div>
+
+            <div class="campo">
+              <label for="rec-responsavel">Responsável</label>
+              <select id="rec-responsavel" required></select>
+            </div>
+
+            <div class="campo">
+              <label for="rec-dia">Dia do mês</label>
+              <input type="number" id="rec-dia" min="1" max="31" step="1" inputmode="numeric" required>
+            </div>
+
+            <div class="campo">
+              <label for="rec-inicio">Início (mês)</label>
+              <input type="month" id="rec-inicio" required>
+            </div>
+
+            <div class="campo">
+              <label for="rec-fim">Fim (mês, opcional)</label>
+              <input type="month" id="rec-fim">
+            </div>
+
+            <p id="recorrencia-form-erro" class="erro" role="alert" aria-live="assertive"></p>
+            <p id="recorrencia-form-sucesso" class="sucesso" role="status" aria-live="polite"></p>
+
+            <div class="form-acoes">
+              <button type="submit" id="btn-salvar-recorrencia">Salvar recorrência</button>
+              <button type="button" id="btn-cancelar-edicao-recorrencia" hidden>Cancelar edição</button>
+            </div>
+          </form>
+        </section>
+
+        <section aria-labelledby="recorrencia-lista-titulo">
+          <h2 id="recorrencia-lista-titulo">Recorrências cadastradas</h2>
+          <p id="recorrencias-status" role="status" aria-live="polite"></p>
+          <ul id="lista-recorrencias"></ul>
+        </section>
+      </div>
+
+      <!-- NOVA TELA DE FATURAS -->
+      <div id="tela-faturas" hidden>
+        <section aria-labelledby="faturas-titulo">
+          <h2 id="faturas-titulo">Assistente de Faturas</h2>
+          <p class="mes-legenda">Busque uma fatura aberta para conciliar os lançamentos e registrar o pagamento em lote.</p>
+          
+          <form id="form-busca-fatura" novalidate>
+            <div class="campo">
+              <label for="fatura-cartao">Cartão de Crédito</label>
+              <select id="fatura-cartao" required></select>
+            </div>
+            <div class="campo">
+              <label for="fatura-mes">Mês de Vencimento da Fatura</label>
+              <input type="month" id="fatura-mes" required>
+            </div>
+            <button type="submit">Buscar Fatura</button>
+          </form>
+        </section>
+
+        <section id="fatura-detalhes" hidden aria-labelledby="fatura-resumo-titulo">
+          <h2 id="fatura-resumo-titulo">Resumo e Pagamento</h2>
+          <div class="mes-resumo">
+            <div class="mes-resumo-item destaque">
+              <span class="mes-resumo-rotulo">Total a Pagar</span>
+              <span id="fatura-total-valor" class="mes-resumo-valor">—</span>
+            </div>
+          </div>
+          
+          <ul id="lista-fatura-itens" style="margin-bottom: 20px;"></ul>
+
+          <form id="form-pagar-fatura" novalidate>
+             <div class="campo">
+                <label for="fatura-meio-pagamento">De onde vai sair o dinheiro?</label>
+                <select id="fatura-meio-pagamento" required>
+                   <option value="debito">Débito em Conta</option>
+                   <option value="pix">Pix</option>
+                </select>
+             </div>
+             <div class="campo">
+                <label for="fatura-data-pagamento">Data do Pagamento</label>
+                <input type="date" id="fatura-data-pagamento" required>
+             </div>
+             <p id="fatura-pagamento-erro" class="erro" role="alert" aria-live="assertive"></p>
+             <button type="submit" id="btn-confirmar-pagamento" class="botao-sucesso" style="background-color: #10b981;">Confirmar Pagamento e Baixar Lançamentos</button>
+          </form>
         </section>
       </div>
     </section>

@@ -7,7 +7,8 @@ import {
   criarLancamentoComRecebiveis,
   atualizarLancamento,
   atualizarParcelaComCascata,
-  salvarParcelasCompra
+  salvarParcelasCompra,
+  excluirLancamento
 } from "../db.js";
 import {
   parseValorParaCentavos,
@@ -18,10 +19,6 @@ import {
   gerarRecebiveis
 } from "../logic.js";
 
-// Inicializa a tela de lançamento. `deps` traz os dados já carregados pelo app.js
-// (categorias, membros, cartões) e o uid do usuário logado.
-// Retorna um handle com `recarregarCartoes` para o app.js atualizar o seletor de
-// cartão quando a tela de Cartões cria/edita/desativa algo.
 export function initTelaLancamento({ categorias, membros, cartoes, uid, irParaCartoes }) {
   const formLancamento = document.getElementById("form-lancamento");
   const valorInput = document.getElementById("lanc-valor");
@@ -127,9 +124,6 @@ export function initTelaLancamento({ categorias, membros, cartoes, uid, irParaCa
     if (isCredito) popularSelectCartao();
   }
 
-  // "Compra para terceiro" só faz sentido em despesas (ver CLAUDE.md "Crédito a
-  // receber") — some junto se o tipo virar receita, e os campos de devedor/nº de
-  // recebimentos só aparecem quando a caixa é marcada.
   function atualizarVisibilidadeTerceiro() {
     const isDespesa = tipoSelecionado() === "despesa";
     campoParaTerceiro.hidden = !isDespesa;
@@ -148,8 +142,6 @@ export function initTelaLancamento({ categorias, membros, cartoes, uid, irParaCa
 
   checkboxParaTerceiro.addEventListener("change", () => {
     if (checkboxParaTerceiro.checked) {
-      // Default do CLAUDE.md: nº de recebimentos = nº de parcelas da compra (crédito);
-      // 1 se não-crédito. Editável em seguida.
       const totalParcelasAtual = meioSelect.value === "credito"
         ? Math.max(1, parseInt(parcelasInput.value, 10) || 1)
         : 1;
@@ -184,15 +176,44 @@ export function initTelaLancamento({ categorias, membros, cartoes, uid, irParaCa
     const sinal = lancamento.tipo === "receita" ? "+" : "−";
     valor.textContent = `${sinal} ${formatCentavos(lancamento.valorCentavos)}`;
 
+    const acoesDiv = document.createElement("div");
+    acoesDiv.style.display = "flex";
+    acoesDiv.style.alignItems = "center";
+
     const btnEditar = document.createElement("button");
     btnEditar.type = "button";
     btnEditar.textContent = "Editar";
     btnEditar.className = "botao-secundario botao-pequeno";
     btnEditar.addEventListener("click", () => alternarEdicaoInline(item, lancamento));
 
+    const btnExcluir = document.createElement("button");
+    btnExcluir.type = "button";
+    btnExcluir.innerHTML = "🗑️";
+    btnExcluir.className = "botao-secundario botao-pequeno";
+    btnExcluir.style.marginLeft = "8px";
+    btnExcluir.title = "Excluir lançamento";
+    
+    btnExcluir.addEventListener("click", async () => {
+      const confirmacao = confirm(`Tem certeza que deseja excluir o lançamento "${lancamento.descricao}" no valor de R$ ${formatCentavos(lancamento.valorCentavos)}?\n\nEsta ação não pode ser desfeita.`);
+      if (confirmacao) {
+        try {
+          btnExcluir.disabled = true;
+          await excluirLancamento(lancamento);
+          await carregarLancamentosDoMes();
+        } catch (erro) {
+          console.error("Erro ao excluir:", erro);
+          alert("Erro ao excluir o lançamento.");
+          btnExcluir.disabled = false;
+        }
+      }
+    });
+
+    acoesDiv.appendChild(btnEditar);
+    acoesDiv.appendChild(btnExcluir);
+
     linha.appendChild(desc);
     linha.appendChild(valor);
-    linha.appendChild(btnEditar);
+    linha.appendChild(acoesDiv);
     item.appendChild(linha);
 
     if (lancamento.meioPagamento === "credito" && lancamento.faturaMes) {
@@ -205,9 +226,6 @@ export function initTelaLancamento({ categorias, membros, cartoes, uid, irParaCa
     return item;
   }
 
-  // Edição inline de valor/descrição/categoria (o que a cascata propaga — ver
-  // CLAUDE.md "Cascata"). Para parcelas de uma compra parcelada, a mudança propaga
-  // às parcelas futuras ainda não pagas; para os demais lançamentos, é uma edição simples.
   function alternarEdicaoInline(item, lancamento) {
     const existente = item.querySelector(".lanc-item-edicao");
     if (existente) {
@@ -362,8 +380,6 @@ export function initTelaLancamento({ categorias, membros, cartoes, uid, irParaCa
       if (totalParcelas < 1) totalParcelas = 1;
     }
 
-    // "Compra para terceiro" (ver CLAUDE.md "Crédito a receber"): a despesa segue
-    // normal, mas em paralelo nascem os recebíveis espelhando a compra em /receber.
     const paraTerceiro = tipo === "despesa" && checkboxParaTerceiro.checked;
     let devedor = null;
     let numRecebimentos = 1;
@@ -378,14 +394,12 @@ export function initTelaLancamento({ categorias, membros, cartoes, uid, irParaCa
     }
 
     const agora = Date.now();
-
     const botao = formLancamento.querySelector("button[type=submit]");
     botao.disabled = true;
     botao.textContent = "Salvando...";
+
     try {
       if (meioPagamento === "credito") {
-        // Toda compra no crédito (mesmo à vista) ganha seu idCompra e passa pela
-        // engine de ciclo de fatura — ver CLAUDE.md "Ciclo de fatura" e "Parcelamento".
         const idCompra = `ID-${agora}`;
         const parcelas = gerarParcelas({
           idCompra,
@@ -429,7 +443,7 @@ export function initTelaLancamento({ categorias, membros, cartoes, uid, irParaCa
           tipo,
           data,
           mes: mesDeData(data),
-          mesDesembolso: mesDeData(data), // não-crédito: dinheiro sai/entra na hora
+          mesDesembolso: mesDeData(data), 
           valorCentavos,
           descricao,
           categoriaId,
@@ -452,7 +466,7 @@ export function initTelaLancamento({ categorias, membros, cartoes, uid, irParaCa
           lancamento.idReembolso = idReembolso;
           recebiveis = gerarRecebiveis({
             idReembolso,
-            origemIdCompra: null, // não-crédito não tem idCompra — link é via idReembolso
+            origemIdCompra: null, 
             devedor,
             numRecebimentos,
             valorTotalCentavos: valorCentavos,
@@ -488,11 +502,10 @@ export function initTelaLancamento({ categorias, membros, cartoes, uid, irParaCa
   carregarLancamentosDoMes();
 
   return {
-    // Chamado pelo app.js sempre que a tela de Cartões cria/edita/desativa/exclui
-    // um cartão, para o seletor de crédito refletir a lista atual sem precisar recarregar.
     recarregarCartoes(novaListaCartoes) {
       cartoesCache = novaListaCartoes;
       if (meioSelect.value === "credito") popularSelectCartao();
-    }
+    },
+    recarregar: carregarLancamentosDoMes
   };
 }

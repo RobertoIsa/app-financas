@@ -6,6 +6,8 @@ import { initTelaLancamento } from "./ui/lancamento.js";
 import { initTelaCartoes } from "./ui/cartoes.js";
 import { initTelaMes } from "./ui/mes.js";
 import { initTelaReceber } from "./ui/receber.js";
+import { initTelaRecorrencias } from "./ui/recorrencias.js";
+import { initTelaFaturas } from "./ui/faturas.js";
 
 const telaLogin = document.getElementById("tela-login");
 const telaApp = document.getElementById("tela-app");
@@ -22,7 +24,9 @@ const telasPorNome = {
   lancamento: document.getElementById("tela-lancamento"),
   mes: document.getElementById("tela-mes"),
   receber: document.getElementById("tela-receber"),
-  cartoes: document.getElementById("tela-cartoes")
+  cartoes: document.getElementById("tela-cartoes"),
+  faturas: document.getElementById("tela-faturas"), // NOVA TELA ADICIONADA AQUI
+  recorrencias: document.getElementById("tela-recorrencias")
 };
 
 const MENSAGENS_ERRO = {
@@ -65,6 +69,9 @@ btnSair.addEventListener("click", () => {
 });
 
 let receberHandle = null;
+let mesHandle = null;
+let recorrenciasHandle = null;
+let faturasHandle = null; // <- NOVA LINHA
 
 function ativarTela(nome) {
   for (const [chave, elemento] of Object.entries(telasPorNome)) {
@@ -77,10 +84,17 @@ function ativarTela(nome) {
       botao.removeAttribute("aria-current");
     }
   }
-  // Recarrega "A Receber" sempre que a aba é aberta, pra refletir recebíveis criados
-  // na tela de Lançamento (a tela só carrega uma vez na inicialização, senão).
+  // Recarrega a aba ao reabri-la, pra refletir o que mudou em outras telas (recebíveis
+  // criados no lançamento, cartões/recorrências criados nessas telas, materialização
+  // de recorrências do mês corrente) — cada tela só carrega sozinha na inicialização.
   if (nome === "receber" && receberHandle) {
     receberHandle.recarregar();
+  }
+  if (nome === "mes" && mesHandle) {
+    mesHandle.recarregar();
+  }
+  if (nome === "recorrencias" && recorrenciasHandle) {
+    recorrenciasHandle.recarregar();
   }
 }
 
@@ -108,11 +122,17 @@ async function inicializarTelaApp(uid) {
 
     initTelaCartoes({
       membros,
-      aoMudar: (novaListaCartoes) => lancamentoHandle.recarregarCartoes(novaListaCartoes)
+      aoMudar: (novaListaCartoes) => {
+        lancamentoHandle.recarregarCartoes(novaListaCartoes);
+        if (recorrenciasHandle) recorrenciasHandle.recarregarCartoes(novaListaCartoes);
+        if (faturasHandle) faturasHandle.recarregarCartoes(novaListaCartoes); // <- NOVA LINHA
+      }
     });
 
-    initTelaMes({ categorias });
+    mesHandle = initTelaMes({ categorias, uid });
     receberHandle = initTelaReceber({ uid });
+    recorrenciasHandle = initTelaRecorrencias({ categorias, membros, cartoes, uid });
+    faturasHandle = initTelaFaturas({ cartoes, uid }); 
   } catch (erro) {
     appErro.textContent = `Erro ao carregar dados: ${erro.message || erro.code || "erro desconhecido"}`;
   }
@@ -130,3 +150,14 @@ onAuthChange((usuario) => {
     formLogin.reset();
   }
 });
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js')
+      .then((registration) => {
+        console.log('Service Worker registrado com sucesso:', registration.scope);
+      })
+      .catch((erro) => {
+        console.error('Falha ao registrar o Service Worker:', erro);
+      });
+  });
+}
