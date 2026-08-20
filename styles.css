@@ -614,3 +614,23 @@ section + section {
     padding-top: 3rem;
   }
 }
+@media (max-width: 768px) {
+  /* Oculta o e-mail no cabeçalho no celular */
+  #info-usuario span {
+    display: none;
+  }
+
+  /* Cria rolagem horizontal no menu de navegação */
+  nav ul {
+    display: flex;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    gap: 15px;
+    padding-bottom: 5px;
+  }
+
+  nav ul li {
+    flex: 0 0 auto;
+  }
+}
