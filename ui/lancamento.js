@@ -71,7 +71,7 @@ export function initTelaLancamento({ categorias, membros, cartoes, uid, irParaCa
     for (const categoria of cats) {
       const opt = document.createElement("option");
       opt.value = categoria.chave;
-      opt.textContent = `${categoria.icone ? categoria.icone + " " : ""}${categoria.nome}`;
+      opt.textContent = `${categoria.nome}${categoria.icone ? " " + categoria.icone : ""}`;
       categoriaSelect.appendChild(opt);
     }
   }
@@ -252,7 +252,7 @@ export function initTelaLancamento({ categorias, membros, cartoes, uid, irParaCa
     for (const cat of categoriasParaTipo(lancamento.tipo)) {
       const opt = document.createElement("option");
       opt.value = cat.chave;
-      opt.textContent = `${cat.icone ? cat.icone + " " : ""}${cat.nome}`;
+      opt.textContent = `${cat.nome}${cat.icone ? " " + cat.icone : ""}`;
       if (cat.chave === lancamento.categoriaId) opt.selected = true;
       campoCategoria.appendChild(opt);
     }
