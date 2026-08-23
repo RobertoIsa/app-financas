@@ -259,7 +259,7 @@ export function gerarOcorrenciaRecorrencia(regra, mes, cartao) {
     return { ...base, faturaMes, vencimento, mesDesembolso, pago: false, dataBaixa: null };
   }
 
-  return { ...base, mesDesembolso: mes, pago: true, dataBaixa: null };
+  return { ...base, mesDesembolso: mes, pago: false, dataBaixa: null };
 }
 
 // Projeção virtual (NÃO grava nada) das ocorrências de todas as regras ativas num mês

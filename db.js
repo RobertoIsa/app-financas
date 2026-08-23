@@ -2,6 +2,7 @@
 // Camada de acesso ao Firebase: inicializa o app e expõe auth + leitura do RTDB.
 // Usa o SDK modular do Firebase via CDN — sem build/bundler.
 
+
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
 import {
   getAuth,
@@ -19,7 +20,8 @@ import {
   remove,
   query,
   orderByChild,
-  equalTo
+  equalTo,
+  runTransaction
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-database.js";
 import { firebaseConfig } from "./firebase-config.js";
 import { calcularCascata, mesDeData } from "./logic.js";
@@ -295,33 +297,56 @@ export async function atualizarRecorrencia(id, dados) {
 }
 
 // Materializa a ocorrência (virtual, vinda de logic.js `gerarOcorrenciaRecorrencia`) de
-// uma regra num mês, gravando o lançamento real em /lancamentos com idRecorrencia
-// apontando de volta pra regra. IDEMPOTÊNCIA é responsabilidade de quem chama: deve
-// checar antes que não existe, no mês, nenhum lançamento com o mesmo idRecorrencia
-// (ver ui/mes.js) — aqui só grava.
+// uma regra num mês, gravando o lançamento real em /lancamentos. Usa uma CHAVE
+// DETERMINÍSTICA ("REC-{idRecorrencia}-{mes}") em vez de push id, escrita dentro de uma
+// runTransaction: o servidor só grava se o nó ainda não existir, senão aborta sem
+// escrever. Isso torna a materialização idempotente de verdade — reload da aba, navegação
+// repetida ou duas abas materializando o mesmo mês ao mesmo tempo nunca duplicam o
+// lançamento, mesmo que a leitura prévia do cliente esteja desatualizada (a checagem por
+// idRecorrencia em ui/mes.js continua existindo como otimização, mas quem garante a
+// ausência de duplicata é esta transação).
 export async function materializarOcorrencia(ocorrencia, uid) {
   const agora = Date.now();
   const { virtual, id, ...dadosOcorrencia } = ocorrencia;
+  const chave = `REC-${dadosOcorrencia.idRecorrencia}-${dadosOcorrencia.mes}`;
   const lancamento = {
     ...dadosOcorrencia,
     criadoPor: uid,
     criadoEm: agora,
     atualizadoEm: agora
   };
-  return criarLancamento(lancamento);
+  const lancamentoRef = ref(db, `lancamentos/${chave}`);
+  const resultado = await runTransaction(lancamentoRef, (atual) => {
+    if (atual !== null) return; // já existe: aborta a transação sem sobrescrever
+    return lancamento;
+  });
+  return resultado.committed ? chave : null;
 }
 // Lê todas as despesas atreladas a uma fatura específica (independentemente de estarem pagas ou não)
 export async function lerLancamentosDaFatura(faturaMes, cartaoId) {
   const consulta = query(ref(db, "lancamentos"), orderByChild("faturaMes"), equalTo(faturaMes));
   const snapshot = await get(consulta);
-  
+
   if (!snapshot.exists()) return [];
-  
+
   const dados = snapshot.val();
-  
+
   return Object.entries(dados)
     .map(([id, valor]) => ({ id, ...valor }))
     .filter(lanc => lanc.cartaoId === cartaoId && lanc.tipo === 'despesa');
+}
+
+// Lê todos os lançamentos cujo faturaMes é o mês informado, de qualquer cartão — usado
+// como fallback na tela Mês pra achar lançamentos de crédito antigos que não têm o campo
+// mesDesembolso preenchido (ver logic.js "obterMesDesembolso"): como mesDesembolso só pode
+// ser o próprio faturaMes ou o mês seguinte (ver CLAUDE.md "Vencimento e mês de
+// desembolso"), consultar faturaMes = M e faturaMes = M-1 cobre todo candidato possível.
+export async function lerLancamentosPorFaturaMes(faturaMes) {
+  const consulta = query(ref(db, "lancamentos"), orderByChild("faturaMes"), equalTo(faturaMes));
+  const snapshot = await get(consulta);
+  if (!snapshot.exists()) return [];
+  const dados = snapshot.val();
+  return Object.entries(dados).map(([id, valor]) => ({ id, ...valor }));
 }
 // Registra o pagamento da fatura em lote com observabilidade
 export async function pagarFaturaEmLote(lancamentosIds, totalCentavos, faturaMes, dataPagamento, meioPagamento, uid) {
@@ -402,4 +427,18 @@ export async function excluirLancamento(lancamento) {
 
   // Comportamento padrão para exclusões normais
   await remove(ref(db, `lancamentos/${lancamento.id}`));
+}
+
+// Lê o texto de observações gerais salvo pelo usuário (nó /observacoes/{uid}).
+// Substitui o antigo armazenamento em localStorage para que as notas fiquem
+// sincronizadas entre dispositivos, como o resto do app.
+export async function lerObservacoes(uid) {
+  const snapshot = await get(ref(db, `observacoes/${uid}`));
+  if (!snapshot.exists()) return "";
+  return snapshot.val().texto || "";
+}
+
+// Grava o texto de observações gerais do usuário.
+export async function salvarObservacoes(uid, texto) {
+  await set(ref(db, `observacoes/${uid}`), { texto, atualizadoEm: Date.now() });
 }

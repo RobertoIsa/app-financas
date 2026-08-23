@@ -44,21 +44,44 @@ export function initTelaLancamento({ categorias, membros, cartoes, uid, irParaCa
   const mesStatus = document.getElementById("mes-status");
   const listaLancamentos = document.getElementById("lista-lancamentos");
 
-  let categoriasCache = categorias;
-  let membrosCache = membros;
-  let cartoesCache = cartoes;
+  let categoriasCache = categorias || [];
+  let membrosCache = membros || [];
+  let cartoesCache = cartoes || [];
+
+  // Injetar categoria de sistema para Adiantamento se não existir
+  if (!categoriasCache.some(c => c.chave === "adiantamento_fatura")) {
+    categoriasCache.push({ 
+      chave: "adiantamento_fatura", 
+      nome: "Adiantamento de Fatura", 
+      icone: "💳", 
+      tipo: "despesa", 
+      sistema: true 
+    });
+  }
+
+  // INJEÇÃO DO TIPO ADIANTAMENTO NO HTML
+  const radiosTipo = formLancamento.querySelectorAll('input[name="tipo"]');
+  if (radiosTipo.length > 0) {
+    const ultimoRadioLabel = radiosTipo[radiosTipo.length - 1].parentElement;
+    const adiantamentoLabel = document.createElement("label");
+    adiantamentoLabel.style.marginLeft = "15px";
+    adiantamentoLabel.innerHTML = `<input type="radio" name="tipo" value="adiantamento"> Adiantamento`;
+    ultimoRadioLabel.insertAdjacentElement('afterend', adiantamentoLabel);
+  }
 
   function tipoSelecionado() {
-    return formLancamento.querySelector('input[name="tipo"]:checked').value;
+    const selecionado = formLancamento.querySelector('input[name="tipo"]:checked');
+    return selecionado ? selecionado.value : "despesa";
   }
 
   function categoriasParaTipo(tipo) {
     return categoriasCache.filter(
-      (c) => (c.tipo === tipo || c.tipo === "ambos") && !c.sistema && c.ativo !== false
+      (c) => (c.tipo === tipo || c.tipo === "ambos" || c.chave === "adiantamento_fatura") && c.ativo !== false
     );
   }
 
   function popularSelectCategorias(tipo) {
+    const valorAnterior = categoriaSelect.value;
     const cats = categoriasParaTipo(tipo);
     categoriaSelect.innerHTML = "";
     if (cats.length === 0) {
@@ -69,10 +92,14 @@ export function initTelaLancamento({ categorias, membros, cartoes, uid, irParaCa
       return;
     }
     for (const categoria of cats) {
+      if (categoria.sistema && categoria.chave !== "adiantamento_fatura") continue; 
       const opt = document.createElement("option");
       opt.value = categoria.chave;
       opt.textContent = `${categoria.nome}${categoria.icone ? " " + categoria.icone : ""}`;
       categoriaSelect.appendChild(opt);
+    }
+    if (valorAnterior && cats.some(c => c.chave === valorAnterior)) {
+      categoriaSelect.value = valorAnterior;
     }
   }
 
@@ -96,6 +123,7 @@ export function initTelaLancamento({ categorias, membros, cartoes, uid, irParaCa
   }
 
   function popularSelectCartao() {
+    const valorAnterior = cartaoSelect.value;
     const ativos = cartoesAtivos();
     cartaoSelect.innerHTML = "";
     if (ativos.length === 0) {
@@ -115,30 +143,39 @@ export function initTelaLancamento({ categorias, membros, cartoes, uid, irParaCa
       opt.textContent = cartao.nome;
       cartaoSelect.appendChild(opt);
     }
+    if (valorAnterior && ativos.some(c => c.id === valorAnterior)) {
+      cartaoSelect.value = valorAnterior;
+    }
   }
 
-  function atualizarVisibilidadeCredito() {
+  function atualizarInterface() {
+    const tipo = tipoSelecionado();
     const isCredito = meioSelect.value === "credito";
-    grupoCartao.hidden = !isCredito;
-    grupoParcelas.hidden = !isCredito;
-    if (isCredito) popularSelectCartao();
-  }
+    const isAdiantamento = tipo === "adiantamento";
 
-  function atualizarVisibilidadeTerceiro() {
-    const isDespesa = tipoSelecionado() === "despesa";
-    campoParaTerceiro.hidden = !isDespesa;
-    if (!isDespesa) checkboxParaTerceiro.checked = false;
-    grupoTerceiro.hidden = !checkboxParaTerceiro.checked || !isDespesa;
+    if (isAdiantamento) {
+      categoriaSelect.parentElement.hidden = true;
+      grupoCartao.hidden = false;
+      grupoParcelas.hidden = true;
+      grupoTerceiro.hidden = true;
+      campoParaTerceiro.hidden = true;
+      popularSelectCartao();
+    } else {
+      categoriaSelect.parentElement.hidden = false;
+      grupoCartao.hidden = !isCredito;
+      grupoParcelas.hidden = !isCredito;
+      campoParaTerceiro.hidden = tipo !== "despesa";
+      grupoTerceiro.hidden = !(tipo === "despesa" && checkboxParaTerceiro.checked);
+      popularSelectCategorias(tipo);
+      if (isCredito) popularSelectCartao();
+    }
   }
 
   for (const radio of formLancamento.querySelectorAll('input[name="tipo"]')) {
-    radio.addEventListener("change", () => {
-      popularSelectCategorias(tipoSelecionado());
-      atualizarVisibilidadeTerceiro();
-    });
+    radio.addEventListener("change", atualizarInterface);
   }
 
-  meioSelect.addEventListener("change", atualizarVisibilidadeCredito);
+  meioSelect.addEventListener("change", atualizarInterface);
 
   checkboxParaTerceiro.addEventListener("change", () => {
     if (checkboxParaTerceiro.checked) {
@@ -147,7 +184,7 @@ export function initTelaLancamento({ categorias, membros, cartoes, uid, irParaCa
         : 1;
       numRecebimentosInput.value = totalParcelasAtual;
     }
-    atualizarVisibilidadeTerceiro();
+    atualizarInterface();
   });
 
   btnIrCartoes.addEventListener("click", () => irParaCartoes());
@@ -160,12 +197,12 @@ export function initTelaLancamento({ categorias, membros, cartoes, uid, irParaCa
     linha.className = "lanc-item-linha";
 
     const categoria = categoriasCache.find((c) => c.chave === lancamento.categoriaId);
-    const icone = categoria?.icone ? `${categoria.icone} ` : "";
+    const icone = categoria?.icone ? ` ${categoria.icone}` : "";
     const nomeCategoria = categoria?.nome || lancamento.categoriaId;
 
     const desc = document.createElement("span");
     desc.className = "lanc-desc";
-    let textoDesc = `${icone}${lancamento.descricao || nomeCategoria}`;
+    let textoDesc = `${lancamento.descricao || nomeCategoria}${icone}`;
     if (lancamento.totalParcelas > 1) {
       textoDesc += ` (${lancamento.parcelaAtual}/${lancamento.totalParcelas})`;
     }
@@ -250,6 +287,7 @@ export function initTelaLancamento({ categorias, membros, cartoes, uid, irParaCa
     const campoCategoria = document.createElement("select");
     campoCategoria.setAttribute("aria-label", "Categoria");
     for (const cat of categoriasParaTipo(lancamento.tipo)) {
+      if (cat.sistema && cat.chave !== "adiantamento_fatura") continue;
       const opt = document.createElement("option");
       opt.value = cat.chave;
       opt.textContent = `${cat.nome}${cat.icone ? " " + cat.icone : ""}`;
@@ -285,8 +323,8 @@ export function initTelaLancamento({ categorias, membros, cartoes, uid, irParaCa
       erroEdicao.textContent = "";
 
       const valorCentavos = parseValorParaCentavos(campoValor.value);
-      if (isNaN(valorCentavos) || valorCentavos <= 0) {
-        erroEdicao.textContent = "Informe um valor válido maior que zero.";
+      if (isNaN(valorCentavos) || valorCentavos === 0) {
+        erroEdicao.textContent = "Informe um valor válido diferente de zero.";
         return;
       }
       const mudancas = {
@@ -349,10 +387,6 @@ export function initTelaLancamento({ categorias, membros, cartoes, uid, irParaCa
       lancamentoErro.textContent = "Informe um valor válido maior que zero.";
       return;
     }
-    if (!categoriaId) {
-      lancamentoErro.textContent = "Selecione uma categoria.";
-      return;
-    }
     if (!responsavel) {
       lancamentoErro.textContent = "Selecione o responsável.";
       return;
@@ -365,24 +399,47 @@ export function initTelaLancamento({ categorias, membros, cartoes, uid, irParaCa
     let cartaoId = null;
     let totalParcelas = 1;
     let cartaoSelecionado = null;
-    if (meioPagamento === "credito") {
+
+    if (tipo === "adiantamento") {
+      if (meioPagamento === "credito") {
+        lancamentoErro.textContent = "O adiantamento não pode ser pago usando crédito. Mude o Meio de Pagamento (ex: Débito ou Pix).";
+        return;
+      }
       if (cartoesAtivos().length === 0) {
-        lancamentoErro.textContent = "Cadastre um cartão antes de lançar no crédito.";
+        lancamentoErro.textContent = "Cadastre um cartão para poder adiantar a fatura.";
         return;
       }
       cartaoId = cartaoSelect.value;
       if (!cartaoId) {
-        lancamentoErro.textContent = "Selecione o cartão.";
+        lancamentoErro.textContent = "Selecione para qual cartão é o adiantamento.";
         return;
       }
       cartaoSelecionado = cartoesCache.find((c) => c.id === cartaoId);
-      totalParcelas = parseInt(parcelasInput.value, 10) || 1;
-      if (totalParcelas < 1) totalParcelas = 1;
+    } else {
+      if (!categoriaId) {
+        lancamentoErro.textContent = "Selecione uma categoria.";
+        return;
+      }
+      if (meioPagamento === "credito") {
+        if (cartoesAtivos().length === 0) {
+          lancamentoErro.textContent = "Cadastre um cartão antes de lançar no crédito.";
+          return;
+        }
+        cartaoId = cartaoSelect.value;
+        if (!cartaoId) {
+          lancamentoErro.textContent = "Selecione o cartão.";
+          return;
+        }
+        cartaoSelecionado = cartoesCache.find((c) => c.id === cartaoId);
+        totalParcelas = parseInt(parcelasInput.value, 10) || 1;
+        if (totalParcelas < 1) totalParcelas = 1;
+      }
     }
 
     const paraTerceiro = tipo === "despesa" && checkboxParaTerceiro.checked;
     let devedor = null;
     let numRecebimentos = 1;
+    
     if (paraTerceiro) {
       devedor = devedorInput.value.trim();
       if (!devedor) {
@@ -399,7 +456,51 @@ export function initTelaLancamento({ categorias, membros, cartoes, uid, irParaCa
     botao.textContent = "Salvando...";
 
     try {
-      if (meioPagamento === "credito") {
+      if (tipo === "adiantamento") {
+        const idCompra = `ID-${agora}`;
+        const catAdiantamento = "adiantamento_fatura"; 
+        const descFatura = descricao || "Adiantamento de Fatura";
+
+        const lancamentoCaixa = {
+          tipo: "despesa",
+          data,
+          mes: mesDeData(data),
+          mesDesembolso: mesDeData(data),
+          valorCentavos,
+          descricao: descFatura,
+          categoriaId: catAdiantamento,
+          meioPagamento, 
+          responsavel,
+          paraTerceiro: false,
+          devedor: null,
+          idReembolso: null,
+          criadoPor: uid,
+          criadoEm: agora,
+          atualizadoEm: agora,
+          pago: true
+        };
+
+        const parcelas = gerarParcelas({
+          idCompra,
+          dataCompra: data,
+          valorCentavos: -valorCentavos, 
+          totalParcelas: 1,
+          diaFechamentoCartao: cartaoSelecionado.diaFechamento,
+          diaVencimentoCartao: cartaoSelecionado.diaVencimento,
+          categoriaId: catAdiantamento,
+          descricao: descFatura,
+          meioPagamento: "credito",
+          cartaoId: cartaoSelecionado.id,
+          responsavel,
+          tipo: "despesa", 
+          criadoPor: uid,
+          criadoEm: agora + 1 
+        });
+
+        await criarLancamento(lancamentoCaixa);
+        await salvarParcelasCompra(parcelas, undefined, []);
+        
+      } else if (meioPagamento === "credito") {
         const idCompra = `ID-${agora}`;
         const parcelas = gerarParcelas({
           idCompra,
@@ -482,9 +583,7 @@ export function initTelaLancamento({ categorias, membros, cartoes, uid, irParaCa
       lancamentoSucesso.textContent = "Lançamento salvo!";
       formLancamento.reset();
       dataInput.value = dataHojeISO();
-      popularSelectCategorias(tipoSelecionado());
-      atualizarVisibilidadeCredito();
-      atualizarVisibilidadeTerceiro();
+      atualizarInterface();
       await carregarLancamentosDoMes();
     } catch (erro) {
       lancamentoErro.textContent = `Erro ao salvar: ${erro.message || erro.code || "erro desconhecido"}`;
@@ -495,16 +594,14 @@ export function initTelaLancamento({ categorias, membros, cartoes, uid, irParaCa
   });
 
   dataInput.value = dataHojeISO();
-  popularSelectCategorias(tipoSelecionado());
   popularSelectResponsavel();
-  atualizarVisibilidadeCredito();
-  atualizarVisibilidadeTerceiro();
+  atualizarInterface();
   carregarLancamentosDoMes();
 
   return {
     recarregarCartoes(novaListaCartoes) {
-      cartoesCache = novaListaCartoes;
-      if (meioSelect.value === "credito") popularSelectCartao();
+      cartoesCache = novaListaCartoes || [];
+      atualizarInterface();
     },
     recarregar: carregarLancamentosDoMes
   };

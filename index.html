@@ -38,6 +38,7 @@
 
       <nav class="app-nav" aria-label="Navegação principal">
         <button type="button" class="nav-botao" data-tela="lancamento" aria-current="page">Lançar</button>
+        <button type="button" class="nav-botao" data-tela="observacoes">Observações</button>
         <button type="button" class="nav-botao" data-tela="mes">Mês</button>
         <button type="button" class="nav-botao" data-tela="receber">A Receber</button>
         <button type="button" class="nav-botao" data-tela="cartoes">Cartões</button>
@@ -154,57 +155,39 @@
             <button type="button" id="mesnav-proximo" aria-label="Próximo mês">›</button>
           </div>
           <button type="button" id="mesnav-hoje" class="botao-secundario botao-pequeno">Ir para hoje</button>
+        </section>
 
+        <section aria-labelledby="mes-balanco-titulo">
+          <h2 id="mes-balanco-titulo">Balanço do Mês (Caixa)</h2>
           <div class="mes-resumo">
+            <div class="mes-resumo-item">
+              <span class="mes-resumo-rotulo">Total Receitas</span>
+              <span id="mes-balanco-receitas" class="mes-resumo-valor">—</span>
+            </div>
             <div class="mes-resumo-item destaque">
-              <span class="mes-resumo-rotulo">Vai sair da conta</span>
-              <span id="mes-resumo-desembolso" class="mes-resumo-valor">—</span>
+              <span class="mes-resumo-rotulo">Total Desembolsos</span>
+              <span id="mes-balanco-despesas" class="mes-resumo-valor">—</span>
             </div>
             <div class="mes-resumo-item">
-              <span class="mes-resumo-rotulo">Vai entrar na conta</span>
-              <span id="mes-resumo-entradas" class="mes-resumo-valor">—</span>
-            </div>
-            <div class="mes-resumo-item">
-              <span class="mes-resumo-rotulo">Saldo projetado</span>
-              <span id="mes-resumo-saldo" class="mes-resumo-valor">—</span>
-            </div>
-            <div class="mes-resumo-item">
-              <span class="mes-resumo-rotulo" title="Quanto foi gasto neste mês, independente de quando a fatura vence.">Gasto no mês (competência)</span>
-              <span id="mes-resumo-gasto" class="mes-resumo-valor">—</span>
-            </div>
-            <div class="mes-resumo-item">
-              <span class="mes-resumo-rotulo" title="Recebíveis pendentes (compras para terceiros) com mês esperado neste mês — já incluídos em 'Vai entrar na conta'.">A receber (previsto)</span>
-              <span id="mes-resumo-previsto" class="mes-resumo-valor">—</span>
-            </div>
-            <div class="mes-resumo-item" id="mes-resumo-recorrente-item" hidden>
-              <span class="mes-resumo-rotulo" title="Ocorrências futuras de recorrências (salário, aluguel, assinaturas) projetadas virtualmente, ainda não lançadas — já incluídas em 'Vai sair/entrar da conta'.">Recorrências (previsto, líquido)</span>
-              <span id="mes-resumo-recorrente" class="mes-resumo-valor">—</span>
+              <span class="mes-resumo-rotulo">Saldo Final</span>
+              <span id="mes-balanco-saldo" class="mes-resumo-valor">—</span>
             </div>
           </div>
-          <p class="mes-legenda">
-            <strong>Vai sair/entrar da conta</strong> = desembolso: quando o dinheiro
-            realmente se move (vencimento da fatura, pra crédito). <strong>Gasto no
-            mês</strong> = competência: quando a compra aconteceu. Os dois divergem
-            quando há compras no cartão — a compra é de um mês, mas a fatura vence
-            no mês seguinte (ou depois).
-          </p>
-          <p id="mes-recorrencia-status" role="status" aria-live="polite" class="aviso"></p>
         </section>
 
-        <section aria-labelledby="mes-lista-titulo">
-          <h2 id="mes-lista-titulo">Lançamentos do mês (competência)</h2>
-          <p id="mes-lista-status" role="status" aria-live="polite"></p>
-          <ul id="mes-lista-lancamentos"></ul>
+        <section aria-labelledby="mes-receitas-titulo">
+          <h2 id="mes-receitas-titulo">Receitas</h2>
+          <ul id="lista-mes-receitas"></ul>
         </section>
 
-        <section aria-labelledby="mes-previstos-titulo" id="mes-previstos-secao" hidden>
-          <h2 id="mes-previstos-titulo">Entradas previstas (a receber)</h2>
-          <ul id="mes-lista-previstos"></ul>
-        </section>
+        <section aria-labelledby="mes-saidas-titulo">
+          <h2 id="mes-saidas-titulo">Desembolsos (Saídas)</h2>
+          
+          <h3>Faturas de Cartão</h3>
+          <ul id="lista-mes-faturas"></ul>
 
-        <section aria-labelledby="mes-recorrentes-titulo" id="mes-recorrentes-secao" hidden>
-          <h2 id="mes-recorrentes-titulo">Recorrências previstas (mês futuro, ainda não lançadas)</h2>
-          <ul id="mes-lista-recorrentes"></ul>
+          <h3>Despesas à Vista (Por Categoria)</h3>
+          <ul id="lista-mes-despesas-vista"></ul>
         </section>
       </div>
 
@@ -402,6 +385,20 @@
           </form>
         </section>
       </div>
+
+      <!-- NOVA TELA DE OBSERVAÇÕES -->
+      <div id="tela-observacoes" hidden>
+        <section aria-labelledby="observacoes-titulo">
+          <h2 id="observacoes-titulo">Observações Gerais</h2>
+          <p class="mes-legenda">Anote informações gerais sobre os lançamentos, acordos ou lembretes do mês.</p>
+          <div class="campo" style="margin-top: 15px;">
+            <textarea id="texto-observacoes" rows="12" style="width: 100%; padding: 12px; background: #1a1a1a; color: #fff; border: 1px solid #333; border-radius: 4px; font-family: inherit; font-size: 1rem;" placeholder="Digite suas observações aqui..."></textarea>
+          </div>
+          <button type="button" id="btn-salvar-observacoes" class="botao-primario" style="margin-top: 10px;">Salvar Observações</button>
+          <span id="obs-status" style="margin-left: 10px; color: #4ade80;" role="status" aria-live="polite"></span>
+        </section>
+      </div>
+
     </section>
   </main>
 

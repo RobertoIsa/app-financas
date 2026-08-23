@@ -1,7 +1,7 @@
 // app.js
 // Bootstrap: login, estado de autenticação e navegação entre telas.
 
-import { login, logout, onAuthChange, lerCategorias, lerMembros, lerCartoes } from "./db.js";
+import { login, logout, onAuthChange, lerCategorias, lerMembros, lerCartoes, lerObservacoes, salvarObservacoes } from "./db.js";
 import { initTelaLancamento } from "./ui/lancamento.js";
 import { initTelaCartoes } from "./ui/cartoes.js";
 import { initTelaMes } from "./ui/mes.js";
@@ -25,8 +25,9 @@ const telasPorNome = {
   mes: document.getElementById("tela-mes"),
   receber: document.getElementById("tela-receber"),
   cartoes: document.getElementById("tela-cartoes"),
-  faturas: document.getElementById("tela-faturas"), // NOVA TELA ADICIONADA AQUI
-  recorrencias: document.getElementById("tela-recorrencias")
+  faturas: document.getElementById("tela-faturas"),
+  recorrencias: document.getElementById("tela-recorrencias"),
+  observacoes: document.getElementById("tela-observacoes") // <- ADICIONADO AQUI
 };
 
 const MENSAGENS_ERRO = {
@@ -133,6 +134,38 @@ async function inicializarTelaApp(uid) {
     receberHandle = initTelaReceber({ uid });
     recorrenciasHandle = initTelaRecorrencias({ categorias, membros, cartoes, uid });
     faturasHandle = initTelaFaturas({ cartoes, uid }); 
+    // --- CONTROLE DA TELA DE OBSERVAÇÕES ---
+    // Persiste em /observacoes/{uid} no Firebase (em vez de localStorage), pra ficar
+    // sincronizado entre dispositivos como o resto do app.
+    const textoObsEl = document.getElementById("texto-observacoes");
+    const btnSalvarObs = document.getElementById("btn-salvar-observacoes");
+    const obsStatusEl = document.getElementById("obs-status");
+
+    try {
+      textoObsEl.value = await lerObservacoes(uid);
+    } catch (err) {
+      obsStatusEl.textContent = `Não foi possível carregar as observações: ${err.code || err.message || "erro desconhecido"}`;
+      obsStatusEl.style.color = "#ef4444";
+      console.error("Erro ao ler observações:", err);
+    }
+
+    btnSalvarObs.addEventListener("click", async () => {
+      btnSalvarObs.disabled = true;
+      try {
+        await salvarObservacoes(uid, textoObsEl.value);
+        obsStatusEl.style.color = "";
+        obsStatusEl.textContent = "Salvo com sucesso!";
+        setTimeout(() => {
+          obsStatusEl.textContent = "";
+        }, 3000);
+      } catch (err) {
+        obsStatusEl.textContent = `Erro ao salvar: ${err.code || err.message || "desconhecido"}`;
+        obsStatusEl.style.color = "#ef4444";
+        console.error("Erro ao salvar observações:", err);
+      } finally {
+        btnSalvarObs.disabled = false;
+      }
+    });
   } catch (erro) {
     appErro.textContent = `Erro ao carregar dados: ${erro.message || erro.code || "erro desconhecido"}`;
   }
