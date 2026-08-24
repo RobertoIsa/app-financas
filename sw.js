@@ -1,4 +1,4 @@
-const CACHE_NAME = 'financas-v3';
+const CACHE_NAME = 'financas-v5';
 const ASSETS = [
   './',
   './index.html',
@@ -12,6 +12,7 @@ const ASSETS = [
   './ui/cartoes.js',
   './ui/recorrencias.js',
   './ui/faturas.js',
+  './ui/dashboard.js',
   './manifest.json'
 ];
 

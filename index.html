@@ -38,6 +38,7 @@
 
       <nav class="app-nav" aria-label="Navegação principal">
         <button type="button" class="nav-botao" data-tela="lancamento" aria-current="page">Lançar</button>
+        <button type="button" class="nav-botao" data-tela="dashboard">Dashboard</button>
         <button type="button" class="nav-botao" data-tela="observacoes">Observações</button>
         <button type="button" class="nav-botao" data-tela="mes">Mês</button>
         <button type="button" class="nav-botao" data-tela="receber">A Receber</button>
@@ -144,6 +145,45 @@
         <p id="mes-status" role="status" aria-live="polite"></p>
         <ul id="lista-lancamentos"></ul>
       </section>
+      </div>
+
+      <div id="tela-dashboard" hidden>
+        <section aria-labelledby="dash-titulo">
+          <h2 id="dash-titulo">Projeção / Dashboard</h2>
+          <p class="mes-legenda">
+            Visão de vários meses à frente: quanto deve sair e quanto deve entrar na
+            conta, mês a mês (eixo desembolso). Clique num mês pra ver o detalhe.
+          </p>
+
+          <div class="campo dash-horizonte-campo">
+            <span id="dash-horizonte-label">Meses à frente</span>
+            <div class="dash-horizonte-atalhos" role="group" aria-labelledby="dash-horizonte-label">
+              <button type="button" class="botao-secundario dash-horizonte-botao" data-meses="3">3</button>
+              <button type="button" class="botao-secundario dash-horizonte-botao" data-meses="6">6</button>
+              <button type="button" class="botao-secundario dash-horizonte-botao" data-meses="12">12</button>
+            </div>
+            <div class="dash-horizonte-livre">
+              <label for="dash-horizonte-input" class="sr-only">Outro número de meses (1 a 12)</label>
+              <input type="number" id="dash-horizonte-input" min="1" max="12" step="1" inputmode="numeric" placeholder="Outro (1-12)">
+              <button type="button" id="dash-horizonte-aplicar" class="botao-secundario">Aplicar</button>
+            </div>
+            <p id="dash-horizonte-erro" class="erro" role="alert" aria-live="assertive"></p>
+          </div>
+
+          <p id="dash-status" role="status" aria-live="polite"></p>
+
+          <ul id="dash-faixa" class="dash-faixa"></ul>
+        </section>
+
+        <section aria-labelledby="dash-detalhe-titulo">
+          <h2 id="dash-detalhe-titulo">Detalhe: <span id="dash-detalhe-mes-label"></span></h2>
+
+          <h3>Por categoria (gasto do mês)</h3>
+          <ul id="dash-lista-categorias" class="dash-lista-simples"></ul>
+
+          <h3>Por pessoa</h3>
+          <ul id="dash-lista-pessoas" class="dash-lista-simples"></ul>
+        </section>
       </div>
 
       <div id="tela-mes" hidden>

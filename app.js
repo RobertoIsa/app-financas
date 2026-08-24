@@ -8,6 +8,7 @@ import { initTelaMes } from "./ui/mes.js";
 import { initTelaReceber } from "./ui/receber.js";
 import { initTelaRecorrencias } from "./ui/recorrencias.js";
 import { initTelaFaturas } from "./ui/faturas.js";
+import { initTelaDashboard } from "./ui/dashboard.js";
 
 const telaLogin = document.getElementById("tela-login");
 const telaApp = document.getElementById("tela-app");
@@ -22,6 +23,7 @@ const appErro = document.getElementById("app-erro");
 const botoesNav = document.querySelectorAll(".nav-botao");
 const telasPorNome = {
   lancamento: document.getElementById("tela-lancamento"),
+  dashboard: document.getElementById("tela-dashboard"),
   mes: document.getElementById("tela-mes"),
   receber: document.getElementById("tela-receber"),
   cartoes: document.getElementById("tela-cartoes"),
@@ -73,6 +75,7 @@ let receberHandle = null;
 let mesHandle = null;
 let recorrenciasHandle = null;
 let faturasHandle = null; // <- NOVA LINHA
+let dashboardHandle = null;
 
 function ativarTela(nome) {
   for (const [chave, elemento] of Object.entries(telasPorNome)) {
@@ -96,6 +99,9 @@ function ativarTela(nome) {
   }
   if (nome === "recorrencias" && recorrenciasHandle) {
     recorrenciasHandle.recarregar();
+  }
+  if (nome === "dashboard" && dashboardHandle) {
+    dashboardHandle.recarregar();
   }
 }
 
@@ -133,7 +139,8 @@ async function inicializarTelaApp(uid) {
     mesHandle = initTelaMes({ categorias, uid });
     receberHandle = initTelaReceber({ uid });
     recorrenciasHandle = initTelaRecorrencias({ categorias, membros, cartoes, uid });
-    faturasHandle = initTelaFaturas({ cartoes, uid }); 
+    faturasHandle = initTelaFaturas({ cartoes, uid });
+    dashboardHandle = initTelaDashboard({ categorias, membros, uid });
     // --- CONTROLE DA TELA DE OBSERVAÇÕES ---
     // Persiste em /observacoes/{uid} no Firebase (em vez de localStorage), pra ficar
     // sincronizado entre dispositivos como o resto do app.
