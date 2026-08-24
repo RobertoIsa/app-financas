@@ -1,4 +1,4 @@
-const CACHE_NAME = 'financas-v5';
+const CACHE_NAME = 'financas-v6';
 const ASSETS = [
   './',
   './index.html',
@@ -13,7 +13,11 @@ const ASSETS = [
   './ui/recorrencias.js',
   './ui/faturas.js',
   './ui/dashboard.js',
-  './manifest.json'
+  './manifest.json',
+  './icons/icon-192.png',
+  './icons/icon-512.png',
+  './icons/icon-512-maskable.png',
+  './icons/apple-touch-icon.png'
 ];
 
 self.addEventListener('install', (event) => {
