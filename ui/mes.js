@@ -317,6 +317,19 @@ export function initTelaMes({ categorias, uid }) {
         addReceita("recebimentos_terceiros", r.valorCentavos, false, r);
       });
 
+      // Recorrências de RECEITA ainda não materializadas (meses futuros): mesmo tratamento
+      // dado às de despesa acima (addFatura/addVista) — sem isso, uma receita recorrente
+      // "sem fim" simplesmente some da projeção assim que o mês deixa de estar
+      // materializado, mesmo a regra continuando ativa. Espelha o split crédito/não-crédito
+      // já usado pra despesa: crédito por mesDesembolso, não-crédito por competência (pra
+      // não-crédito os dois eixos são o mesmo mês, ver CLAUDE.md "Os dois eixos de tempo").
+      recorrentesVirtuaisDesembolso.filter(r => r.tipo === "receita" && r.meioPagamento === "credito").forEach(r => {
+        addReceita(r.categoriaId, r.valorCentavos, false, r);
+      });
+      recorrentesVirtuaisCompetencia.filter(r => r.tipo === "receita" && r.meioPagamento !== "credito").forEach(r => {
+        addReceita(r.categoriaId, r.valorCentavos, false, r);
+      });
+
       const gruposFaturas = {};
       let totalGeralFaturas = 0;
 
