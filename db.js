@@ -26,7 +26,7 @@ import {
   runTransaction
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-database.js";
 import { firebaseConfig } from "./firebase-config.js";
-import { calcularCascata, mesDeData } from "./logic.js";
+import { calcularCascata, mesDeData, lancamentoMoveCaixa, origemCaixaDoLancamento } from "./logic.js";
 
 const app = initializeApp(firebaseConfig);
 
@@ -230,7 +230,10 @@ export async function atualizarRecebivel(id, dados) {
 
 // Baixa de um recebível: marca status "recebido" + dataRecebido, e gera a receita real
 // em /lancamentos (categoria recebimentos_terceiros — ver CLAUDE.md "Crédito a
-// receber"), numa única operação atômica (update multi-caminho).
+// receber"), numa única operação atômica (update multi-caminho). Em seguida, best-effort
+// (mesmo padrão da Leva 1 — ver excluirLancamento/pagarFaturaEmLote), registra a entrada
+// no Caixa: a baixa é dinheiro caindo de verdade (ver CLAUDE.md "Caixa (saldo acumulado
+// real)").
 export async function marcarRecebivelRecebido(recebivel, dataRecebidoISO, uid) {
   const agora = Date.now();
   const novaReceitaRef = push(ref(db, "lancamentos"));
@@ -258,11 +261,24 @@ export async function marcarRecebivelRecebido(recebivel, dataRecebidoISO, uid) {
     [`receber/${recebivel.id}/atualizadoEm`]: agora
   };
   await update(ref(db), atualizacoes);
+
+  try {
+    await movimentarCaixa({
+      tipo: "entrada",
+      valorCentavos: recebivel.valorCentavos,
+      origem: "recebivel",
+      lancamentoId: novaReceitaRef.key,
+      uid
+    });
+  } catch (erroCaixa) {
+    console.error("Falha ao registrar movimento de caixa da baixa de recebível:", erroCaixa);
+  }
 }
 
 // Desfaz a baixa de um recebível: apaga a receita gerada em /lancamentos e volta o
-// item de /receber para "pendente", numa única operação atômica.
-export async function desfazerRecebimento(recebivel) {
+// item de /receber para "pendente", numa única operação atômica. Em seguida, estorna
+// (best-effort, sem apagar histórico) o movimento de caixa da baixa original.
+export async function desfazerRecebimento(recebivel, uid) {
   const agora = Date.now();
   const atualizacoes = {
     [`receber/${recebivel.id}/status`]: "pendente",
@@ -274,6 +290,21 @@ export async function desfazerRecebimento(recebivel) {
     atualizacoes[`lancamentos/${recebivel.lancamentoReceitaId}`] = null;
   }
   await update(ref(db), atualizacoes);
+
+  if (recebivel.lancamentoReceitaId) {
+    try {
+      await movimentarCaixa({
+        tipo: "saida",
+        valorCentavos: recebivel.valorCentavos,
+        origem: "recebivel",
+        lancamentoId: recebivel.lancamentoReceitaId,
+        estorno: true,
+        uid
+      });
+    } catch (erroCaixa) {
+      console.error("Falha ao estornar movimento de caixa do recebimento desfeito:", erroCaixa);
+    }
+  }
 }
 
 // Lê /recorrencias e devolve como lista [{ id, descricao, ... }] — ver CLAUDE.md
@@ -468,37 +499,26 @@ export async function excluirLancamento(lancamento, uid) {
     return;
   }
 
-  // Lançamento imediato (dinheiro/débito/pix/transferência) que moveu o caixa na
-  // criação (ver ui/lancamento.js) — excluir precisa estornar esse movimento, senão o
-  // saldo fica "preso" com dinheiro de um lançamento que não existe mais (bug real
-  // encontrado em uso). Critério pra saber se este lançamento passou pelo hook de
-  // criação da Leva 1, sem precisar de um campo novo dedicado:
-  //   - não-crédito (crédito nunca move caixa na criação);
-  //   - não é a despesa de pagamento de fatura (já tratada e retornada acima);
-  //   - idRecorrencia ausente — uma recorrência materializada ainda NÃO move caixa na
-  //     criação (isso é Leva 2), então não pode gerar estorno aqui;
-  //   - paraTerceiro definido (booleano) — só o formulário de lançamento (ui/lancamento.js)
-  //     seta esse campo explicitamente pra TODO lançamento que cria; a receita gerada
-  //     por marcarRecebivelRecebido nunca seta paraTerceiro, e a baixa de recebível
-  //     ainda não move caixa (também Leva 2) — então fica corretamente excluída aqui.
-  const eraImediatoComCaixa =
-    lancamento.meioPagamento !== 'credito' &&
-    lancamento.categoriaId !== 'pagamento_cartao' &&
-    !lancamento.idRecorrencia &&
-    lancamento.paraTerceiro !== undefined &&
-    (lancamento.tipo === 'despesa' || lancamento.tipo === 'receita');
+  // Qualquer outro lançamento que já moveu o caixa de verdade — despesa/receita manual
+  // imediata (Leva 1), receita de baixa de recebível, ou recorrência materializada já
+  // paga (Leva 2) — precisa do mesmo estorno, senão o saldo fica "preso" com dinheiro de
+  // um lançamento que não existe mais (bug real encontrado em uso). `lancamentoMoveCaixa`/
+  // `origemCaixaDoLancamento` (logic.js) concentram esse critério num só lugar, reusado
+  // também na edição de valor (ver ui/lancamento.js).
+  const precisaEstornarCaixa = lancamentoMoveCaixa(lancamento);
+  const origemEstorno = precisaEstornarCaixa ? origemCaixaDoLancamento(lancamento) : null;
 
   // Comportamento padrão para exclusões normais
   await remove(ref(db, `lancamentos/${lancamento.id}`));
 
-  if (eraImediatoComCaixa && lancamento.valorCentavos > 0) {
+  if (precisaEstornarCaixa && lancamento.valorCentavos > 0) {
     // Best-effort, mesmo padrão do estorno de pagamento_cartao acima: a exclusão já
     // está commitada; se o estorno de caixa falhar, só loga — não desfaz a exclusão.
     try {
       await movimentarCaixa({
         tipo: lancamento.tipo === 'receita' ? 'saida' : 'entrada',
         valorCentavos: lancamento.valorCentavos,
-        origem: lancamento.tipo === 'receita' ? 'receita' : 'despesa_imediata',
+        origem: origemEstorno,
         lancamentoId: lancamento.id,
         estorno: true,
         uid

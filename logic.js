@@ -288,3 +288,51 @@ export function projetarOcorrenciasPorDesembolso(regras, mesAlvo, cartoesPorId =
   ];
   return candidatos.filter((ocorrencia) => ocorrencia.mesDesembolso === mesAlvo);
 }
+
+// --- Caixa (saldo acumulado real) — ver CLAUDE.md "Caixa (saldo acumulado real)" ---
+// Predicados puros (sem Firebase) que decidem se um lançamento JÁ GRAVADO corresponde a
+// um evento que move o caixa de verdade, e por qual origem — reaproveitados tanto por
+// db.js (excluirLancamento, pra saber se precisa estornar) quanto por ui/lancamento.js
+// (edição de valor, pra saber se precisa ajustar a diferença). Nenhum dos dois recalcula
+// essa decisão do zero — só chamam esta função.
+//
+// Um lançamento pode ter chegado a mover o caixa por 3 caminhos diferentes:
+//   1) lançamento MANUAL imediato (ui/lancamento.js sempre seta `paraTerceiro`
+//      explicitamente pra tudo que cria — nenhuma outra origem faz isso);
+//   2) a receita gerada por db.js `marcarRecebivelRecebido` (sempre categoriaId
+//      "recebimentos_terceiros" + idReembolso, e NUNCA seta `paraTerceiro`);
+//   3) uma recorrência materializada (`idRecorrencia` presente) que já foi marcada como
+//      paga (`pago === true`) — antes disso ela existe mas não moveu nada ainda.
+// Crédito nunca move o caixa na criação (só na baixa da fatura, via pagarFaturaEmLote,
+// que já cobre pagamento_cartao à parte).
+export function lancamentoMoveCaixa(lancamento) {
+  if (!lancamento) return false;
+  if (lancamento.meioPagamento === "credito") return false;
+  if (lancamento.categoriaId === "pagamento_cartao") return false; // tratado à parte
+
+  if (lancamento.paraTerceiro !== undefined && !lancamento.idRecorrencia) return true;
+
+  if (
+    lancamento.categoriaId === "recebimentos_terceiros" &&
+    lancamento.idReembolso &&
+    lancamento.paraTerceiro === undefined
+  ) {
+    return true;
+  }
+
+  if (lancamento.idRecorrencia && lancamento.pago === true) return true;
+
+  return false;
+}
+
+// Dado um lançamento que `lancamentoMoveCaixa` considera relevante, devolve a origem
+// (ver enum documentado no CLAUDE.md) que foi usada quando o movimento original de caixa
+// foi gravado — pra um estorno referenciar a origem certa, não sempre "despesa_imediata"/
+// "receita".
+export function origemCaixaDoLancamento(lancamento) {
+  if (lancamento.idRecorrencia) return "recorrencia_paga";
+  if (lancamento.categoriaId === "recebimentos_terceiros" && lancamento.idReembolso) {
+    return "recebivel";
+  }
+  return lancamento.tipo === "receita" ? "receita" : "despesa_imediata";
+}

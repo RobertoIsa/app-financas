@@ -8,8 +8,9 @@ import { lerSaldoCaixa, lerMovimentosCaixaRecentes } from "../db.js";
 import { formatCentavos } from "../logic.js";
 
 // Traduz o campo "origem" (ver schema /caixa/movimentos no CLAUDE.md) pra um rótulo
-// legível. Origens ainda não ligadas nesta leva (recebivel, recorrencia_paga) já ficam
-// traduzidas, prontas pra quando a Leva 2 passar a gerá-las.
+// legível. "ajuste_edicao" não é um dos 5 origens documentados no CLAUDE.md original —
+// é gerado quando o valor de um lançamento que já move caixa é editado (ver
+// ui/lancamento.js), pra distinguir do movimento original.
 const ORIGENS_LEGIVEIS = {
   despesa_imediata: "Despesa imediata",
   pagamento_fatura: "Pagamento de fatura",

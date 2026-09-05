@@ -10,7 +10,8 @@ import {
   materializarOcorrencia,
   excluirLancamento,
   atualizarLancamento,
-  marcarRecebivelRecebido
+  marcarRecebivelRecebido,
+  movimentarCaixa
 } from "../db.js";
 import {
   formatCentavos,
@@ -271,7 +272,32 @@ export function initTelaMes({ categorias, uid }) {
           btnToggle.disabled = true;
           try {
             await atualizarLancamento(it.id, { pago: !isPago });
+
+            // "Recorrência paga" (ver CLAUDE.md "Caixa (saldo acumulado real)"): só
+            // recorrência materializada NÃO-crédito move o caixa aqui — crédito só move
+            // na baixa da fatura inteira (pagarFaturaEmLote), pra não contar 2x.
+            let avisoCaixa = "";
+            if (it.idRecorrencia && it.meioPagamento !== "credito") {
+              const vaiFicarPago = !isPago;
+              try {
+                await movimentarCaixa({
+                  tipo: it.tipo === "receita"
+                    ? (vaiFicarPago ? "entrada" : "saida")
+                    : (vaiFicarPago ? "saida" : "entrada"),
+                  valorCentavos: it.valorCentavos,
+                  origem: "recorrencia_paga",
+                  lancamentoId: it.id,
+                  estorno: !vaiFicarPago,
+                  uid
+                });
+              } catch (erroCaixa) {
+                console.error("Falha ao registrar movimento de caixa da recorrência:", erroCaixa);
+                avisoCaixa = " (Aviso: o saldo do Caixa pode não ter atualizado — confira na aba Caixa.)";
+              }
+            }
+
             await carregar();
+            if (avisoCaixa) alert("Atualizado!" + avisoCaixa);
           } catch (erro) {
             alert("Erro: " + erro.message);
             btnToggle.disabled = false;

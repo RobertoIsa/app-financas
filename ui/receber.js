@@ -202,7 +202,7 @@ export function initTelaReceber({ uid }) {
       btnDesfazer.disabled = true;
       btnDesfazer.textContent = "Desfazendo...";
       try {
-        await desfazerRecebimento(recebivel);
+        await desfazerRecebimento(recebivel, uid);
         await carregar();
       } catch (err) {
         recebidosStatusEl.textContent = `Erro ao desfazer: ${err.message || err.code || "erro desconhecido"}`;

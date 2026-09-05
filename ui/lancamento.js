@@ -17,7 +17,8 @@ import {
   dataHojeISO,
   mesDeData,
   gerarParcelas,
-  gerarRecebiveis
+  gerarRecebiveis,
+  lancamentoMoveCaixa
 } from "../logic.js";
 
 export function initTelaLancamento({ categorias, membros, cartoes, uid, irParaCartoes }) {
@@ -343,18 +344,13 @@ export function initTelaLancamento({ categorias, membros, cartoes, uid, irParaCa
         } else {
           await atualizarLancamento(lancamento.id, mudancas);
 
-          // Se este lançamento move o caixa (imediato, não-crédito — mesmo critério
-          // usado em db.js excluirLancamento), ajusta o saldo pela DIFERENÇA de valor,
+          // Se este lançamento move o caixa (mesmo critério de db.js excluirLancamento,
+          // via logic.js lancamentoMoveCaixa — cobre lançamento manual imediato, receita
+          // de recebível e recorrência já paga), ajusta o saldo pela DIFERENÇA de valor,
           // não pelo valor novo do zero — ver CLAUDE.md "Caixa (saldo acumulado real)".
-          const ehImediatoComCaixa =
-            lancamento.meioPagamento !== "credito" &&
-            lancamento.categoriaId !== "pagamento_cartao" &&
-            !lancamento.idRecorrencia &&
-            lancamento.paraTerceiro !== undefined &&
-            (lancamento.tipo === "despesa" || lancamento.tipo === "receita");
           const diferenca = valorCentavos - lancamento.valorCentavos;
 
-          if (ehImediatoComCaixa && diferenca !== 0) {
+          if (lancamentoMoveCaixa(lancamento) && diferenca !== 0) {
             // Sinal do ajuste no caixa: receita subindo ou despesa descendo = entra mais
             // dinheiro; receita descendo ou despesa subindo = sai mais dinheiro.
             const ajusteSinalizado = (lancamento.tipo === "receita" ? 1 : -1) * diferenca;
