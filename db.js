@@ -114,6 +114,47 @@ export async function atualizarLancamento(id, dados) {
   await update(ref(db, `lancamentos/${id}`), dados);
 }
 
+// Ponto ÚNICO de entrada pra marcar/desmarcar um lançamento como pago — usado tanto pelo
+// toggle individual quanto pelo "Pagar Tudo"/"Receber Tudo" em ui/mes.js. NUNCA deve
+// existir um segundo caminho que chame atualizarLancamento(id, {pago}) diretamente pra
+// esse fim: foi exatamente essa duplicação (o botão em lote ignorando a lógica de caixa
+// que só existia no toggle individual) que causou um bug real — recorrência marcada paga
+// via "Pagar Tudo" não movia o Caixa, silenciosamente, porque esse caminho nunca tinha
+// sido ligado a movimentarCaixa.
+//
+// Decide sozinho, via logic.js `lancamentoMoveCaixa`, se essa mudança de `pago` precisa
+// mexer no Caixa: hoje só recorrência materializada não-crédito depende do próprio `pago`
+// pra "mover ou não" (a Leva 2 do Caixa — crédito só move na baixa da fatura inteira, ver
+// pagarFaturaEmLote); despesa/receita manual imediata já moveu o caixa na criação e não
+// depende deste toggle. Comparar `lancamentoMoveCaixa` ANTES e DEPOIS do novo `pago`
+// cobre os dois casos com a mesma regra, sem precisar duplicar a decisão aqui.
+export async function marcarLancamentoPago(lancamento, pago, uid) {
+  await atualizarLancamento(lancamento.id, { pago });
+
+  const moviaAntes = lancamentoMoveCaixa(lancamento);
+  const moveDepois = lancamentoMoveCaixa({ ...lancamento, pago });
+  if (moviaAntes === moveDepois) return { caixaAtualizado: true }; // nada muda no caixa
+
+  const entrando = !moviaAntes && moveDepois; // false->true: evento novo (ex.: "Pagar")
+  const direcaoBase = lancamento.tipo === "receita" ? "entrada" : "saida";
+  const tipoCaixa = entrando ? direcaoBase : (direcaoBase === "entrada" ? "saida" : "entrada");
+
+  try {
+    await movimentarCaixa({
+      tipo: tipoCaixa,
+      valorCentavos: lancamento.valorCentavos,
+      origem: origemCaixaDoLancamento(lancamento),
+      lancamentoId: lancamento.id,
+      estorno: !entrando,
+      uid
+    });
+    return { caixaAtualizado: true };
+  } catch (erroCaixa) {
+    console.error("Falha ao ajustar o caixa ao marcar lançamento como pago/não pago:", erroCaixa);
+    return { caixaAtualizado: false };
+  }
+}
+
 // Lê todas as parcelas de uma compra (mesmo idCompra), usando o índice "idCompra".
 export async function lerLancamentosPorIdCompra(idCompra) {
   const consulta = query(ref(db, "lancamentos"), orderByChild("idCompra"), equalTo(idCompra));

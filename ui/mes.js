@@ -9,10 +9,9 @@ import {
   lerCartoes,
   materializarOcorrencia,
   excluirLancamento,
-  atualizarLancamento,
+  marcarLancamentoPago,
   marcarRecebivelRecebido,
-  desfazerRecebimento,
-  movimentarCaixa
+  desfazerRecebimento
 } from "../db.js";
 import {
   formatCentavos,
@@ -207,8 +206,16 @@ export function initTelaMes({ categorias, uid }) {
           btnAcaoGlobal.disabled = true;
           btnAcaoGlobal.textContent = "...";
           try {
-            await Promise.all(pendentesParaBotao.map(p => atualizarLancamento(p.id, { pago: true })));
-            await carregar(); 
+            // marcarLancamentoPago (db.js) é o ÚNICO ponto de entrada pra isso — decide
+            // sozinho se precisa mexer no Caixa (ver comentário lá). Nunca chamar
+            // atualizarLancamento(id, {pago}) direto aqui de novo.
+            const resultados = await Promise.all(
+              pendentesParaBotao.map((p) => marcarLancamentoPago(p, true, uid))
+            );
+            await carregar();
+            if (resultados.some((r) => r && r.caixaAtualizado === false)) {
+              alert("Atualizado! (Aviso: o saldo do Caixa pode não ter atualizado pra algum item — confira na aba Caixa.)");
+            }
           } catch (erro) {
             alert("Erro ao atualizar: " + erro.message);
             btnAcaoGlobal.disabled = false;
@@ -311,54 +318,17 @@ export function initTelaMes({ categorias, uid }) {
           e.stopPropagation();
           btnToggle.disabled = true;
           try {
-            // DIAG-RECORRENCIA 1: campos exatos do item ANTES do toggle, e se a condição
-            // "tem idRecorrencia e não é crédito" vai passar.
-            console.log("[DIAG-RECORRENCIA] 1. Antes do toggle", {
-              id: it.id,
-              descricao: it.descricao,
-              idRecorrencia: it.idRecorrencia,
-              meioPagamento: it.meioPagamento,
-              cartaoId: it.cartaoId,
-              tipo: it.tipo,
-              pago: it.pago,
-              isPago,
-              condicaoVaiPassar: !!(it.idRecorrencia && it.meioPagamento !== "credito")
-            });
-
-            await atualizarLancamento(it.id, { pago: !isPago });
-
-            // "Recorrência paga" (ver CLAUDE.md "Caixa (saldo acumulado real)"): só
-            // recorrência materializada NÃO-crédito move o caixa aqui — crédito só move
-            // na baixa da fatura inteira (pagarFaturaEmLote), pra não contar 2x.
-            let avisoCaixa = "";
-            if (it.idRecorrencia && it.meioPagamento !== "credito") {
-              const vaiFicarPago = !isPago;
-              const params = {
-                tipo: it.tipo === "receita"
-                  ? (vaiFicarPago ? "entrada" : "saida")
-                  : (vaiFicarPago ? "saida" : "entrada"),
-                valorCentavos: it.valorCentavos,
-                origem: "recorrencia_paga",
-                lancamentoId: it.id,
-                estorno: !vaiFicarPago,
-                uid
-              };
-              console.log("[DIAG-RECORRENCIA] 2. Condição passou, chamando movimentarCaixa com:", params);
-              try {
-                const resultado = await movimentarCaixa(params);
-                console.log("[DIAG-RECORRENCIA] 3. movimentarCaixa resolveu com sucesso, key do movimento:", resultado);
-              } catch (erroCaixa) {
-                console.error("[DIAG-RECORRENCIA] 3. movimentarCaixa REJEITOU:", erroCaixa);
-                avisoCaixa = " (Aviso: o saldo do Caixa pode não ter atualizado — confira na aba Caixa.)";
-              }
-            } else {
-              console.log("[DIAG-RECORRENCIA] 2. Condição NÃO passou — movimentarCaixa não foi chamada.");
-            }
-
+            // marcarLancamentoPago (db.js) é o ÚNICO ponto de entrada pra isso — decide
+            // sozinho se precisa mexer no Caixa (ver comentário lá). Nunca chamar
+            // atualizarLancamento(id, {pago}) direto aqui de novo — foi exatamente essa
+            // duplicação (o botão "Pagar Tudo" tinha seu próprio caminho paralelo) que
+            // causou o bug de recorrência paga não mover o caixa.
+            const resultado = await marcarLancamentoPago(it, !isPago, uid);
             await carregar();
-            if (avisoCaixa) alert("Atualizado!" + avisoCaixa);
+            if (resultado && resultado.caixaAtualizado === false) {
+              alert("Atualizado! (Aviso: o saldo do Caixa pode não ter atualizado — confira na aba Caixa.)");
+            }
           } catch (erro) {
-            console.error("[DIAG-RECORRENCIA] Erro no toggle:", erro);
             alert("Erro: " + erro.message);
             btnToggle.disabled = false;
           }
