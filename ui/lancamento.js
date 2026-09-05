@@ -337,12 +337,46 @@ export function initTelaLancamento({ categorias, membros, cartoes, uid, irParaCa
       btnSalvar.disabled = true;
       btnSalvar.textContent = "Salvando...";
       try {
+        let avisoCaixaEdicao = "";
         if (lancamento.idCompra && lancamento.totalParcelas > 1) {
           await atualizarParcelaComCascata(lancamento.idCompra, lancamento.parcelaAtual, mudancas);
         } else {
           await atualizarLancamento(lancamento.id, mudancas);
+
+          // Se este lançamento move o caixa (imediato, não-crédito — mesmo critério
+          // usado em db.js excluirLancamento), ajusta o saldo pela DIFERENÇA de valor,
+          // não pelo valor novo do zero — ver CLAUDE.md "Caixa (saldo acumulado real)".
+          const ehImediatoComCaixa =
+            lancamento.meioPagamento !== "credito" &&
+            lancamento.categoriaId !== "pagamento_cartao" &&
+            !lancamento.idRecorrencia &&
+            lancamento.paraTerceiro !== undefined &&
+            (lancamento.tipo === "despesa" || lancamento.tipo === "receita");
+          const diferenca = valorCentavos - lancamento.valorCentavos;
+
+          if (ehImediatoComCaixa && diferenca !== 0) {
+            // Sinal do ajuste no caixa: receita subindo ou despesa descendo = entra mais
+            // dinheiro; receita descendo ou despesa subindo = sai mais dinheiro.
+            const ajusteSinalizado = (lancamento.tipo === "receita" ? 1 : -1) * diferenca;
+            try {
+              await movimentarCaixa({
+                tipo: ajusteSinalizado > 0 ? "entrada" : "saida",
+                valorCentavos: Math.abs(ajusteSinalizado),
+                origem: "ajuste_edicao",
+                lancamentoId: lancamento.id,
+                uid
+              });
+            } catch (erroCaixa) {
+              console.error("Falha ao ajustar caixa na edição do lançamento:", erroCaixa);
+              avisoCaixaEdicao = " O saldo do Caixa pode não ter sido ajustado — confira na aba Caixa.";
+            }
+          }
         }
         await carregarLancamentosDoMes();
+        // A lista inteira é recriada por carregarLancamentosDoMes() (este form some
+        // junto) — por isso o aviso vai por alert(), não por erroEdicao (que já não
+        // estaria mais visível na hora que o usuário pudesse ler).
+        if (avisoCaixaEdicao) alert("Lançamento atualizado!" + avisoCaixaEdicao);
       } catch (erro) {
         erroEdicao.textContent = `Erro ao salvar: ${erro.message || erro.code || "erro desconhecido"}`;
         btnSalvar.disabled = false;

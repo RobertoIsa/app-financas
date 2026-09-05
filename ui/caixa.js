@@ -15,7 +15,8 @@ const ORIGENS_LEGIVEIS = {
   pagamento_fatura: "Pagamento de fatura",
   receita: "Receita",
   recebivel: "Recebimento de terceiro",
-  recorrencia_paga: "Recorrência paga"
+  recorrencia_paga: "Recorrência paga",
+  ajuste_edicao: "Ajuste de edição"
 };
 
 function nomeOrigem(origem) {

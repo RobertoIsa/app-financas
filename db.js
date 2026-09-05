@@ -468,8 +468,45 @@ export async function excluirLancamento(lancamento, uid) {
     return;
   }
 
+  // Lançamento imediato (dinheiro/débito/pix/transferência) que moveu o caixa na
+  // criação (ver ui/lancamento.js) — excluir precisa estornar esse movimento, senão o
+  // saldo fica "preso" com dinheiro de um lançamento que não existe mais (bug real
+  // encontrado em uso). Critério pra saber se este lançamento passou pelo hook de
+  // criação da Leva 1, sem precisar de um campo novo dedicado:
+  //   - não-crédito (crédito nunca move caixa na criação);
+  //   - não é a despesa de pagamento de fatura (já tratada e retornada acima);
+  //   - idRecorrencia ausente — uma recorrência materializada ainda NÃO move caixa na
+  //     criação (isso é Leva 2), então não pode gerar estorno aqui;
+  //   - paraTerceiro definido (booleano) — só o formulário de lançamento (ui/lancamento.js)
+  //     seta esse campo explicitamente pra TODO lançamento que cria; a receita gerada
+  //     por marcarRecebivelRecebido nunca seta paraTerceiro, e a baixa de recebível
+  //     ainda não move caixa (também Leva 2) — então fica corretamente excluída aqui.
+  const eraImediatoComCaixa =
+    lancamento.meioPagamento !== 'credito' &&
+    lancamento.categoriaId !== 'pagamento_cartao' &&
+    !lancamento.idRecorrencia &&
+    lancamento.paraTerceiro !== undefined &&
+    (lancamento.tipo === 'despesa' || lancamento.tipo === 'receita');
+
   // Comportamento padrão para exclusões normais
   await remove(ref(db, `lancamentos/${lancamento.id}`));
+
+  if (eraImediatoComCaixa && lancamento.valorCentavos > 0) {
+    // Best-effort, mesmo padrão do estorno de pagamento_cartao acima: a exclusão já
+    // está commitada; se o estorno de caixa falhar, só loga — não desfaz a exclusão.
+    try {
+      await movimentarCaixa({
+        tipo: lancamento.tipo === 'receita' ? 'saida' : 'entrada',
+        valorCentavos: lancamento.valorCentavos,
+        origem: lancamento.tipo === 'receita' ? 'receita' : 'despesa_imediata',
+        lancamentoId: lancamento.id,
+        estorno: true,
+        uid
+      });
+    } catch (erroCaixa) {
+      console.error("Falha ao estornar movimento de caixa do lançamento excluído:", erroCaixa);
+    }
+  }
 }
 
 // ---- Caixa (saldo acumulado real) — ver CLAUDE.md "Caixa (saldo acumulado real)" ----
