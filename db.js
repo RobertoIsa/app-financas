@@ -20,7 +20,9 @@ import {
   remove,
   query,
   orderByChild,
+  orderByKey,
   equalTo,
+  limitToLast,
   runTransaction
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-database.js";
 import { firebaseConfig } from "./firebase-config.js";
@@ -391,10 +393,33 @@ export async function pagarFaturaEmLote(lancamentosIds, totalCentavos, faturaMes
     console.error("❌ [FIREBASE] REJEIÇÃO CRÍTICA DO SERVIDOR:", erro);
     throw erro; // Joga o erro de volta para a tela do aplicativo
   }
+
+  // Pagar a fatura é dinheiro saindo de verdade (ver CLAUDE.md "Caixa (saldo acumulado
+  // real)") — best-effort: a baixa acima já está commitada, então uma falha aqui não
+  // desfaz nada, só fica sem atualizar o saldo (o chamador decide se avisa o usuário).
+  let caixaAtualizado = true;
+  try {
+    await movimentarCaixa({
+      tipo: "saida",
+      valorCentavos: totalCentavos,
+      origem: "pagamento_fatura",
+      lancamentoId: novaRef.key,
+      uid
+    });
+  } catch (erroCaixa) {
+    caixaAtualizado = false;
+    console.error("Falha ao registrar movimento de caixa do pagamento de fatura:", erroCaixa);
+  }
+
+  return { pagamentoLancamentoId: novaRef.key, caixaAtualizado };
 }
 // Exclui um lançamento do banco. Se for um "pagamento_fatura", realiza o estorno atômico
-// (apaga a despesa e reverte o status "pago" das compras daquela fatura).
-export async function excluirLancamento(lancamento) {
+// (apaga a despesa e reverte o status "pago" das compras daquela fatura) e o estorno
+// correspondente no Caixa (ver CLAUDE.md "Caixa (saldo acumulado real)"): desfazer um
+// pagamento de fatura devolve o dinheiro ao saldo, com um movimento de entrada que
+// referencia o pagamento estornado — não apaga o histórico, só registra a reversão.
+// `uid` é necessário só pro registro de auditoria do movimento de caixa gerado (se houver).
+export async function excluirLancamento(lancamento, uid) {
   // Lógica de estorno para pagamento de faturas
   if (lancamento.categoriaId === 'pagamento_cartao') {
     const atualizacoes = {};
@@ -403,11 +428,11 @@ export async function excluirLancamento(lancamento) {
     // 1. Busca todas as compras vinculadas àquela fatura que estão pagas
     const consulta = query(ref(db, "lancamentos"), orderByChild("faturaMes"), equalTo(faturaMes));
     const snapshot = await get(consulta);
-    
+
     if (snapshot.exists()) {
       const dados = snapshot.val();
       const agora = Date.now();
-      
+
       // 2. Reverte o status das compras para pendente
       Object.entries(dados).forEach(([id, compra]) => {
          if(compra.pago === true && compra.tipo === 'despesa' && compra.categoriaId !== 'pagamento_cartao'){
@@ -422,11 +447,108 @@ export async function excluirLancamento(lancamento) {
 
     // 4. Executa a reversão atômica
     await update(ref(db), atualizacoes);
+
+    // 5. Estorna o movimento de caixa do pagamento original (entrada = devolve o
+    // dinheiro). Best-effort: o desfazer do lançamento já está commitado no passo 4;
+    // se o estorno de caixa falhar (ex.: rede caiu), não desfaz o passo 4 — só loga,
+    // pra não deixar o usuário achando que o "desfazer" inteiro falhou quando na
+    // verdade só o saldo de caixa não ficou 100% sincronizado.
+    try {
+      await movimentarCaixa({
+        tipo: "entrada",
+        valorCentavos: lancamento.valorCentavos,
+        origem: "pagamento_fatura",
+        lancamentoId: lancamento.id,
+        estorno: true,
+        uid
+      });
+    } catch (erroCaixa) {
+      console.error("Falha ao estornar movimento de caixa do pagamento de fatura desfeito:", erroCaixa);
+    }
     return;
   }
 
   // Comportamento padrão para exclusões normais
   await remove(ref(db, `lancamentos/${lancamento.id}`));
+}
+
+// ---- Caixa (saldo acumulado real) — ver CLAUDE.md "Caixa (saldo acumulado real)" ----
+// Regra de ouro: o caixa só se move quando o dinheiro sai/entra DE FATO, nunca por algo
+// pendente/previsto/projetado. Nasce em 0 (sem saldo inicial informado).
+
+// Lê o saldo atual de /caixa/saldo. Antes do primeiro movimento, o nó pode nem existir
+// ainda — devolve 0 nesse caso (nasce em R$0, ver CLAUDE.md).
+export async function lerSaldoCaixa() {
+  const snapshot = await get(ref(db, "caixa/saldo"));
+  if (!snapshot.exists()) return { valorCentavos: 0, atualizadoEm: null };
+  return snapshot.val();
+}
+
+// Lê os N movimentos mais recentes de /caixa/movimentos, mais recente primeiro.
+// orderByKey() não precisa de índice extra (chave já é ordenável por natureza no RTDB,
+// e push ids são cronologicamente crescentes) — limitToLast(N) pega só os N últimos.
+export async function lerMovimentosCaixaRecentes(limite = 50) {
+  const consulta = query(ref(db, "caixa/movimentos"), orderByKey(), limitToLast(limite));
+  const snapshot = await get(consulta);
+  if (!snapshot.exists()) return [];
+  const dados = snapshot.val();
+  return Object.entries(dados)
+    .map(([id, valor]) => ({ id, ...valor }))
+    .sort((a, b) => b.id.localeCompare(a.id));
+}
+
+// Função genérica que registra QUALQUER evento que mexe o caixa de verdade: grava um
+// movimento de auditoria em /caixa/movimentos e soma/subtrai o saldo em
+// /caixa/saldo/valorCentavos. `tipo`: "entrada" | "saida". `origem`: string livre (ver
+// enum documentado em CLAUDE.md — "despesa_imediata"|"pagamento_fatura"|"receita"|
+// "recebivel"|"recorrencia_paga"). `lancamentoId`: referência ao evento de origem
+// (id de /lancamentos ou /receber, conforme a origem). `estorno` (opcional): marca que
+// este movimento é a REVERSÃO de outro (ex.: desfazer pagamento de fatura) — não apaga
+// nada, só soma um movimento inverso, preservando o histórico completo.
+//
+// Atomicidade: o RTDB não tem uma primitiva única que faça "soma segura sob concorrência"
+// E "grava um novo registro" na MESMA operação sem ter que transacionar o nó pai inteiro
+// (o que ficaria cada vez mais caro conforme /caixa/movimentos cresce). Por isso:
+// 1) grava o movimento primeiro (registro de auditoria imutável e barato de escrever,
+//    independente do tamanho da lista existente);
+// 2) soma o saldo com runTransaction em /caixa/saldo/valorCentavos — o RTDB relê o valor
+//    atual do servidor e tenta de novo automaticamente se outro cliente (ex.: a esposa
+//    lançando ao mesmo tempo) escreveu no meio do caminho, eliminando a race condition
+//    de um "ler valor atual, somar, escrever" ingênuo.
+// Se o passo 2 falhar, o passo 1 é desfeito (rollback best-effort) pra não deixar um
+// registro de auditoria "fantasma" que não teve efeito nenhum no saldo.
+export async function movimentarCaixa({ tipo, valorCentavos, origem, lancamentoId, estorno, uid }) {
+  if (tipo !== "entrada" && tipo !== "saida") {
+    throw new Error(`movimentarCaixa: tipo inválido "${tipo}" (esperado "entrada" ou "saida")`);
+  }
+  if (!Number.isInteger(valorCentavos) || valorCentavos <= 0) {
+    throw new Error(`movimentarCaixa: valorCentavos inválido (${valorCentavos})`);
+  }
+
+  const agora = Date.now();
+  const delta = tipo === "entrada" ? valorCentavos : -valorCentavos;
+
+  const movimentoRef = push(ref(db, "caixa/movimentos"));
+  const movimento = {
+    tipo,
+    valorCentavos,
+    origem,
+    lancamentoId: lancamentoId || null,
+    estorno: !!estorno,
+    criadoPor: uid || null,
+    criadoEm: agora
+  };
+  await set(movimentoRef, movimento);
+
+  try {
+    await runTransaction(ref(db, "caixa/saldo/valorCentavos"), (atual) => (atual || 0) + delta);
+    await update(ref(db, "caixa/saldo"), { atualizadoEm: agora });
+  } catch (erro) {
+    await remove(movimentoRef).catch(() => {});
+    throw erro;
+  }
+
+  return movimentoRef.key;
 }
 
 // Lê o texto de observações gerais salvo pelo usuário (nó /observacoes/{uid}).

@@ -287,7 +287,7 @@ export function initTelaMes({ categorias, uid }) {
           if(confirm(`Excluir ${descricaoItem}?`)) {
               btnDel.disabled = true;
               try {
-                await excluirLancamento(it);
+                await excluirLancamento(it, uid);
                 await carregar();
               } catch (erro) {
                 alert("Erro: " + erro.message);

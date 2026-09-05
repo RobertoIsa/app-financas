@@ -45,6 +45,7 @@
         <button type="button" class="nav-botao" data-tela="dashboard">Dashboard</button>
         <button type="button" class="nav-botao" data-tela="observacoes">Observações</button>
         <button type="button" class="nav-botao" data-tela="mes">Mês</button>
+        <button type="button" class="nav-botao" data-tela="caixa">Caixa</button>
         <button type="button" class="nav-botao" data-tela="receber">A Receber</button>
         <button type="button" class="nav-botao" data-tela="cartoes">Cartões</button>
         <button type="button" class="nav-botao" data-tela="faturas">Faturas</button> <!-- NOVO BOTÃO -->
@@ -232,6 +233,27 @@
 
           <h3>Despesas à Vista (Por Categoria)</h3>
           <ul id="lista-mes-despesas-vista"></ul>
+        </section>
+      </div>
+
+      <div id="tela-caixa" hidden>
+        <section aria-labelledby="caixa-titulo">
+          <h2 id="caixa-titulo">Caixa</h2>
+          <p class="mes-legenda">
+            Saldo acumulado real — soma tudo desde que o app começou a ser usado (não
+            reseta por mês). Só se move quando o dinheiro sai/entra de fato (nunca por
+            algo pendente ou projetado).
+          </p>
+          <div class="caixa-saldo-card">
+            <span class="caixa-saldo-rotulo">Saldo atual</span>
+            <span id="caixa-saldo-valor" class="caixa-saldo-valor">—</span>
+          </div>
+        </section>
+
+        <section aria-labelledby="caixa-movimentos-titulo">
+          <h2 id="caixa-movimentos-titulo">Movimentos recentes</h2>
+          <p id="caixa-status" role="status" aria-live="polite"></p>
+          <ul id="lista-caixa-movimentos"></ul>
         </section>
       </div>
 

@@ -145,16 +145,20 @@ export function initTelaFaturas({ cartoes, uid }) {
 
     try {
       // Chama a função centralizada no db.js
-      await pagarFaturaEmLote(
-        lancamentosPendentesIds, 
-        totalCentavos, 
-        faturaMes, 
-        dataPagamento, 
-        meioPagamento, 
+      const resultado = await pagarFaturaEmLote(
+        lancamentosPendentesIds,
+        totalCentavos,
+        faturaMes,
+        dataPagamento,
+        meioPagamento,
         uid
       );
 
-      alert("Fatura paga e lançamentos baixados com sucesso!");
+      if (resultado && resultado.caixaAtualizado === false) {
+        alert("Fatura paga e lançamentos baixados com sucesso! (Aviso: o saldo do Caixa pode não ter atualizado — confira na aba Caixa.)");
+      } else {
+        alert("Fatura paga e lançamentos baixados com sucesso!");
+      }
       formPagar.reset();
       
       // Atualiza a tela imediatamente para refletir os status "Pago"

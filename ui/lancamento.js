@@ -8,7 +8,8 @@ import {
   atualizarLancamento,
   atualizarParcelaComCascata,
   salvarParcelasCompra,
-  excluirLancamento
+  excluirLancamento,
+  movimentarCaixa
 } from "../db.js";
 import {
   parseValorParaCentavos,
@@ -235,7 +236,7 @@ export function initTelaLancamento({ categorias, membros, cartoes, uid, irParaCa
       if (confirmacao) {
         try {
           btnExcluir.disabled = true;
-          await excluirLancamento(lancamento);
+          await excluirLancamento(lancamento, uid);
           await carregarLancamentosDoMes();
         } catch (erro) {
           console.error("Erro ao excluir:", erro);
@@ -370,10 +371,24 @@ export function initTelaLancamento({ categorias, membros, cartoes, uid, irParaCa
     }
   }
 
+  // Best-effort: se o movimento de caixa falhar, o lançamento em si já foi salvo com
+  // sucesso — não faz sentido mostrar "Erro ao salvar" pro usuário quando o que falhou
+  // foi só a atualização do saldo agregado. Só avisa, sem bloquear o fluxo principal.
+  let avisoCaixa = "";
+  async function registrarMovimentoCaixa(params) {
+    try {
+      await movimentarCaixa(params);
+    } catch (erroCaixa) {
+      console.error("Falha ao registrar movimento de caixa:", erroCaixa);
+      avisoCaixa = " (Aviso: o saldo do Caixa pode não ter atualizado — confira na aba Caixa.)";
+    }
+  }
+
   formLancamento.addEventListener("submit", async (evento) => {
     evento.preventDefault();
     lancamentoErro.textContent = "";
     lancamentoSucesso.textContent = "";
+    avisoCaixa = "";
 
     const tipo = tipoSelecionado();
     const valorCentavos = parseValorParaCentavos(valorInput.value);
@@ -497,9 +512,21 @@ export function initTelaLancamento({ categorias, membros, cartoes, uid, irParaCa
           criadoEm: agora + 1 
         });
 
-        await criarLancamento(lancamentoCaixa);
+        const idLancamentoCaixa = await criarLancamento(lancamentoCaixa);
         await salvarParcelasCompra(parcelas, undefined, []);
-        
+
+        // O adiantamento tira dinheiro real da conta agora (meio de pagamento não-
+        // crédito, pago imediatamente) — move o caixa. O ajuste negativo lançado no
+        // crédito (parcelas) não move nada sozinho; só a fatura paga move (ver
+        // pagarFaturaEmLote).
+        await registrarMovimentoCaixa({
+          tipo: "saida",
+          valorCentavos,
+          origem: "despesa_imediata",
+          lancamentoId: idLancamentoCaixa,
+          uid
+        });
+
       } else if (meioPagamento === "credito") {
         const idCompra = `ID-${agora}`;
         const parcelas = gerarParcelas({
@@ -560,6 +587,7 @@ export function initTelaLancamento({ categorias, membros, cartoes, uid, irParaCa
         };
 
         let recebiveis = [];
+        let idCriado;
         if (paraTerceiro) {
           const idReembolso = `REEMB-${agora}`;
           lancamento.paraTerceiro = true;
@@ -567,7 +595,7 @@ export function initTelaLancamento({ categorias, membros, cartoes, uid, irParaCa
           lancamento.idReembolso = idReembolso;
           recebiveis = gerarRecebiveis({
             idReembolso,
-            origemIdCompra: null, 
+            origemIdCompra: null,
             devedor,
             numRecebimentos,
             valorTotalCentavos: valorCentavos,
@@ -575,12 +603,24 @@ export function initTelaLancamento({ categorias, membros, cartoes, uid, irParaCa
             criadoPor: uid,
             criadoEm: agora
           });
-          await criarLancamentoComRecebiveis(lancamento, recebiveis);
+          idCriado = await criarLancamentoComRecebiveis(lancamento, recebiveis);
         } else {
-          await criarLancamento(lancamento);
+          idCriado = await criarLancamento(lancamento);
         }
+
+        // Despesa/receita imediata (dinheiro/débito/pix/transferência) move o caixa de
+        // verdade no momento do lançamento — ver CLAUDE.md "Caixa (saldo acumulado
+        // real)". Lançamentos no crédito NÃO entram aqui (esse branch só roda quando
+        // meioPagamento !== "credito" — ver condição do "else if" acima).
+        await registrarMovimentoCaixa({
+          tipo: lancamento.tipo === "receita" ? "entrada" : "saida",
+          valorCentavos: lancamento.valorCentavos,
+          origem: lancamento.tipo === "receita" ? "receita" : "despesa_imediata",
+          lancamentoId: idCriado,
+          uid
+        });
       }
-      lancamentoSucesso.textContent = "Lançamento salvo!";
+      lancamentoSucesso.textContent = "Lançamento salvo!" + avisoCaixa;
       formLancamento.reset();
       dataInput.value = dataHojeISO();
       atualizarInterface();
