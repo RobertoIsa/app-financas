@@ -311,6 +311,20 @@ export function initTelaMes({ categorias, uid }) {
           e.stopPropagation();
           btnToggle.disabled = true;
           try {
+            // DIAG-RECORRENCIA 1: campos exatos do item ANTES do toggle, e se a condição
+            // "tem idRecorrencia e não é crédito" vai passar.
+            console.log("[DIAG-RECORRENCIA] 1. Antes do toggle", {
+              id: it.id,
+              descricao: it.descricao,
+              idRecorrencia: it.idRecorrencia,
+              meioPagamento: it.meioPagamento,
+              cartaoId: it.cartaoId,
+              tipo: it.tipo,
+              pago: it.pago,
+              isPago,
+              condicaoVaiPassar: !!(it.idRecorrencia && it.meioPagamento !== "credito")
+            });
+
             await atualizarLancamento(it.id, { pago: !isPago });
 
             // "Recorrência paga" (ver CLAUDE.md "Caixa (saldo acumulado real)"): só
@@ -319,26 +333,32 @@ export function initTelaMes({ categorias, uid }) {
             let avisoCaixa = "";
             if (it.idRecorrencia && it.meioPagamento !== "credito") {
               const vaiFicarPago = !isPago;
+              const params = {
+                tipo: it.tipo === "receita"
+                  ? (vaiFicarPago ? "entrada" : "saida")
+                  : (vaiFicarPago ? "saida" : "entrada"),
+                valorCentavos: it.valorCentavos,
+                origem: "recorrencia_paga",
+                lancamentoId: it.id,
+                estorno: !vaiFicarPago,
+                uid
+              };
+              console.log("[DIAG-RECORRENCIA] 2. Condição passou, chamando movimentarCaixa com:", params);
               try {
-                await movimentarCaixa({
-                  tipo: it.tipo === "receita"
-                    ? (vaiFicarPago ? "entrada" : "saida")
-                    : (vaiFicarPago ? "saida" : "entrada"),
-                  valorCentavos: it.valorCentavos,
-                  origem: "recorrencia_paga",
-                  lancamentoId: it.id,
-                  estorno: !vaiFicarPago,
-                  uid
-                });
+                const resultado = await movimentarCaixa(params);
+                console.log("[DIAG-RECORRENCIA] 3. movimentarCaixa resolveu com sucesso, key do movimento:", resultado);
               } catch (erroCaixa) {
-                console.error("Falha ao registrar movimento de caixa da recorrência:", erroCaixa);
+                console.error("[DIAG-RECORRENCIA] 3. movimentarCaixa REJEITOU:", erroCaixa);
                 avisoCaixa = " (Aviso: o saldo do Caixa pode não ter atualizado — confira na aba Caixa.)";
               }
+            } else {
+              console.log("[DIAG-RECORRENCIA] 2. Condição NÃO passou — movimentarCaixa não foi chamada.");
             }
 
             await carregar();
             if (avisoCaixa) alert("Atualizado!" + avisoCaixa);
           } catch (erro) {
+            console.error("[DIAG-RECORRENCIA] Erro no toggle:", erro);
             alert("Erro: " + erro.message);
             btnToggle.disabled = false;
           }
