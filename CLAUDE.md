@@ -26,6 +26,24 @@ a data em que o dinheiro se move:
 Exemplo: compra de R$300 em 3x no cartão em agosto = **um gasto de agosto** (eixo gasto),
 mas **três desembolsos** nos meses em que cada fatura vence (eixo desembolso).
 
+### Caixa (saldo acumulado real)
+
+Além da visão por mês, existe um **saldo de caixa acumulado** — "quanto dinheiro eu tenho
+agora", somando todo o histórico desde que o app começou a ser usado (não reseta por mês).
+Nasce em **R$0** (sem saldo inicial informado — decisão do usuário: simplicidade sobre
+reconciliação com o banco real).
+
+**Regra de ouro: o caixa só se move quando o dinheiro sai/entra de fato.** Nunca por algo
+pendente, previsto ou projetado. Eventos que MOVEM o caixa:
+- Despesa imediata (dinheiro/débito/Pix/transferência) → sai na hora do lançamento.
+- Pagamento de fatura de cartão (baixa) → sai no momento da baixa, não da compra.
+- Receita confirmada (lançada como recebida).
+- Baixa de recebível em `/receber` (alguém te paga) → entra no momento da baixa.
+- Recorrência marcada como paga (o botão "Pagar" de uma ocorrência materializada).
+
+Eventos que NÃO movem o caixa: compra parcelada ainda não vencida, recebível pendente,
+recorrência ainda projetada/virtual (não materializada), fatura ainda não paga.
+
 > Substitui o sistema atual de planilha (Google Sheets + Apps Script), preservando as
 > boas ideias já validadas ali: agrupamento de parcelas por `idCompra`, desdobramento
 > automático de parcelas, cascata para parcelas futuras, pagamento de fatura com
@@ -190,6 +208,22 @@ por mês agora — só quando/se crescer muito; ver "Arquivamento").
   criadoPor, criadoEm, atualizadoEm
 }
 
+# Caixa: saldo acumulado real (não reseta por mês). Documento único + log de movimentos
+# para auditoria/desfazer. Nasce em 0. Só se move nos eventos listados em "Caixa (saldo
+# acumulado real)" — nunca por algo pendente/projetado.
+/caixa/saldo: {
+  valorCentavos: 0,             # saldo atual acumulado — único ponto de verdade
+  atualizadoEm: 1723650000000
+}
+/caixa/movimentos/{id}: {       # trilha de auditoria de cada evento que mexeu o caixa
+  tipo: "entrada",              # "entrada" | "saida"
+  valorCentavos: 45000,
+  origem: "recebivel",          # "despesa_imediata"|"pagamento_fatura"|"receita"|
+                                 # "recebivel"|"recorrencia_paga"
+  lancamentoId: "-Nxxx",        # ou recebivelId, conforme a origem — referência ao evento
+  criadoPor, criadoEm
+}
+
 /logs/erros/{id}:  { ts, uid, tela, mensagem, contexto }
 /logs/acoes/{id}:  { ts, uid, acao, alvo }   # exclusões, baixas, reversões
 ```
@@ -199,6 +233,7 @@ por mês agora — só quando/se crescer muito; ver "Arquivamento").
 ```json
 "lancamentos": { ".indexOn": ["mes", "mesDesembolso", "idCompra", "cartaoId", "faturaMes", "idReembolso"] }
 "receber":     { ".indexOn": ["mesEsperado", "idReembolso", "origemIdCompra", "status"] }
+"caixa/movimentos": { ".indexOn": ["origem", "lancamentoId"] }
 ```
 
 Consultas **sempre** por índice, nunca escutando o nó inteiro. A lista/orçamento consulta
@@ -387,6 +422,10 @@ Funciona para qualquer mês — passado, atual ou futuro (é o que dá a previsi
     "recorrencias": {
       ".write": "auth != null && root.child('membros').child(auth.uid).exists()"
     },
+    "caixa": {
+      ".write": "auth != null && root.child('membros').child(auth.uid).exists()",
+      "movimentos": { ".indexOn": ["origem", "lancamentoId"] }
+    },
     "logs":        { ".write": "auth != null && root.child('membros').child(auth.uid).exists()" }
   }
 }
@@ -395,6 +434,10 @@ Funciona para qualquer mês — passado, atual ou futuro (é o que dá a previsi
 > Ao chegar na etapa de crédito a receber, **republicar** estas regras no console (elas
 > adicionam o nó `/receber` e os índices `mesDesembolso`/`idReembolso`). Enquanto isso não
 > acontecer, consultas por esses novos índices vão falhar pedindo `.indexOn`.
+>
+> **Mesma coisa vale para `/caixa`:** essas regras (que já incluem o nó `/caixa` e seu
+> índice) precisam ser republicadas no console antes de codar o Caixa, senão toda escrita
+> em `/caixa/saldo` ou `/caixa/movimentos` falha com PERMISSION_DENIED.
 
 - Escrita é concedida **ramo a ramo**, nunca na raiz. `/membros` fica sem regra de
   escrita → protegida (só se altera pelo console). **Cuidado com o RTDB:** regras
@@ -461,7 +504,11 @@ Funciona para qualquer mês — passado, atual ou futuro (é o que dá a previsi
 8. **Categorias** — catálogo (CRUD) de despesa e receita.
 9. **Recorrências** — gerenciar itens mensais (salário, aluguel, assinaturas): criar,
    editar valor, encerrar (afeta futuras).
-10. **Ajustes** — exportar backup, tema, gerenciar membros (admin).
+10. **Caixa** — saldo acumulado real, com extrato dos movimentos (entradas/saídas efetivas)
+    e a origem de cada um (despesa imediata, pagamento de fatura, receita, baixa de
+    recebível, recorrência paga). Não confundir com o "Saldo do Mês"/"Saldo Projetado"
+    (que são por mês); este é o total acumulado desde o início do uso.
+11. **Ajustes** — exportar backup, tema, gerenciar membros (admin).
 
 ---
 
@@ -496,41 +543,37 @@ Funciona para qualquer mês — passado, atual ou futuro (é o que dá a previsi
   `/recorrencias`; meses futuros projetados **virtualmente** (horizonte **escolhido pelo
   usuário**, não fixo); mês corrente materializado em `/lancamentos`. Mais enxuto que gerar
   cópias à frente (sem inchaço, sem reabastecer, sem reescrever ao mudar valor).
+- **Caixa (saldo acumulado):** nasce em **R$0** (sem saldo inicial informado — simplicidade
+  escolhida pelo usuário). Só se move em eventos de dinheiro **real** (despesa imediata,
+  pagamento de fatura, receita confirmada, baixa de recebível, recorrência paga) — nunca
+  por algo pendente/projetado. Separado do "Saldo do Mês"/"Saldo Projetado" existentes.
 
 ---
 
 ## Estado da implementação
 
-**Feito e validado:** login seguro (allowlist), tela de lançamento, cadastro de cartões,
-campos de crédito condicionais, engine de parcelamento + ciclo de fatura (`faturaMes`,
-com virada de ano validada), tela "Mês" com totais nos dois eixos (desembolso via índice
-`mesDesembolso`, sem mais janela client-side), regras de segurança publicadas com o nó
-`/receber` e os índices `mesEsperado`/`idReembolso`/`origemIdCompra`/`status`.
+**Feito e validado (com dados reais):** login seguro, lançamento em qualquer meio, cartões,
+parcelamento com ciclo de fatura, eixo de desembolso (`mesDesembolso`/`vencimento`),
+tela "Mês" com os dois eixos, crédito a receber (marcar/baixar/desfazer), recorrências
+(regra + projeção virtual, despesa e receita), Dashboard (faixa de meses, categoria,
+pessoa), PWA instalado e testado no Android. Regras de segurança publicadas cobrindo
+lancamentos/receber/recorrencias.
 
-**Crédito a receber:** implementado de ponta a ponta — checkbox "compra para terceiro" no
-lançamento (crédito e não-crédito) gera despesa + N itens em `/receber` atomicamente
-(`salvarParcelasCompra`/`criarLancamentoComRecebiveis` em `db.js`); painel "A Receber"
-(`ui/receber.js`) lista pendentes por devedor com baixa e desfazer; tela Mês soma
-recebíveis pendentes como entrada PREVISTA (distinta de receita confirmada). Ver
-`gerarRecebiveis`/`distribuirValorRecebimentos` em `logic.js` pra regra de distribuição
-de valor e mês esperado quando `numRecebimentos` diverge do nº de parcelas.
+**Bugs reais encontrados e corrigidos ao longo do uso:** recorrência duplicando na
+materialização (corrigido com chave determinística + transação); recorrência nascia paga
+em vez de pendente; seção "Faturas de Cartão" da aba Mês buscava por competência em vez de
+`mesDesembolso` (parcelas futuras não apareciam); projeção virtual de receita recorrente
+não alimentava a exibição em meses futuros (só despesa).
 
-**Recorrências:** implementado pelo método regra + projeção virtual (nada gravado pra
-meses futuros). Tela "Recorrências" (`ui/recorrencias.js`) é CRUD puro da regra em
-`/recorrencias`; editar nunca reativa uma regra encerrada sozinho (é ação separada). A
-projeção e a materialização vivem na tela Mês (`ui/mes.js`), que a cada carregamento lê
-`/recorrencias` e `/cartoes` do zero: pra mês atual/passado, materializa (uma vez, via
-`db.js` `materializarOcorrencia`) as ocorrências ainda sem lançamento real — idempotência
-checada por `idRecorrencia` dentro dos lançamentos já lidos do mês (índice `mes`, sem
-precisar de índice novo); pra mês futuro, projeta virtualmente (`logic.js`
-`projetarOcorrenciasDoMes`/`projetarOcorrenciasPorDesembolso`) e soma nos dois eixos sem
-gravar. Regra no crédito reusa a engine de ciclo de fatura (`calcularFaturaMes`/
-`calcularVencimentoEDesembolso`); `diaDoMes` maior que os dias do mês vira o último dia.
-**Pendente:** publicar no console a regra de escrita de `/recorrencias` (já está no bloco
-de `rules` deste arquivo) — sem isso, criar recorrência falha com permissão negada.
-
-**Próximos passos:**
-1. **PWA + deploy no Vercel** (instalar no celular).
+**Próximos passos (nesta ordem):**
+1. **Investigar e corrigir erro PERMISSION_DENIED** ao dar baixa em recebível na aba
+   "A Receber" (em investigação — causa raiz ainda não identificada).
+2. **Caixa (saldo acumulado):** nó `/caixa` + regras já definidas neste documento —
+   **republicar as regras no console antes de codar**. Implementar: atualização atômica do
+   saldo em cada evento que move dinheiro de fato (ver lista em "Caixa (saldo acumulado
+   real)"), tela de extrato, e ligar aos fluxos já existentes (lançamento imediato,
+   pagamento de fatura, baixa de recebível, recorrência paga) sem duplicar a lógica.
+3. **Testar instalação PWA no iPhone** (esposa) — ainda não confirmado; Android já validado.
 
 **Ajustes finos anotados:** rótulo "Valor da parcela" no crédito parcelado; melhorar o
 campo de data (fácil esquecer de trocar o dia).

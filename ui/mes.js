@@ -9,7 +9,8 @@ import {
   lerCartoes,
   materializarOcorrencia,
   excluirLancamento,
-  atualizarLancamento
+  atualizarLancamento,
+  marcarRecebivelRecebido
 } from "../db.js";
 import {
   formatCentavos,
@@ -59,6 +60,108 @@ export function initTelaMes({ categorias, uid }) {
     const cat = categoriasCache.find(c => c.chave === categoriaId);
     if (!cat) return categoriaId;
     return `${cat.nome}${cat.icone ? " " + cat.icone : ""}`;
+  }
+
+  // Abre (ou fecha, se já aberto) um mini-formulário inline pedindo a data do
+  // recebimento, pro botão "Receber" individual de um item de /receber dentro da
+  // seção "Recebimentos de Terceiros" — mesmo fluxo/UX da aba "A Receber"
+  // (ver ui/receber.js alternarFormRecebimento), só que reaproveitado aqui em vez de
+  // chamar atualizarLancamento (que era o bug: um recebível não é um /lancamentos).
+  function alternarFormRecebimentoIndividual(subReferencia, recebivel) {
+    // DIAG 3b: confirma que a função rodou de fato, e por qual ramo (fechar um form já
+    // aberto vs. criar um novo) — se cair sempre no ramo de "fechar", explicaria a tela
+    // "resetando" sem nada acontecer.
+    console.log("[DIAG-RECEBER] 3b. alternarFormRecebimentoIndividual chamada", {
+      recebivelId: recebivel.id,
+      subReferencia,
+      proximoIrmao: subReferencia.nextElementSibling
+    });
+    const existente = subReferencia.nextElementSibling;
+    if (existente && existente.dataset && existente.dataset.formRecebivel === recebivel.id) {
+      console.log("[DIAG-RECEBER] 3c. Form já existia — fechando (ramo 'remove')", recebivel.id);
+      existente.remove();
+      return;
+    }
+    console.log("[DIAG-RECEBER] 3d. Nenhum form existente — vai criar um novo", recebivel.id);
+
+    const formLi = document.createElement("li");
+    formLi.dataset.formRecebivel = recebivel.id;
+    formLi.style.display = "flex";
+    formLi.style.flexDirection = "column";
+    formLi.style.gap = "8px";
+    formLi.style.padding = "8px 0";
+    formLi.style.borderBottom = "1px solid var(--fundo)";
+
+    const campoData = document.createElement("input");
+    campoData.type = "date";
+    campoData.value = dataHojeISO();
+    campoData.setAttribute("aria-label", "Data do recebimento");
+
+    const linhaBotoes = document.createElement("div");
+    linhaBotoes.style.display = "flex";
+    linhaBotoes.style.gap = "8px";
+
+    const btnConfirmar = document.createElement("button");
+    btnConfirmar.type = "button";
+    btnConfirmar.textContent = "Confirmar recebimento";
+    btnConfirmar.className = "botao-secundario botao-pequeno";
+
+    const btnCancelar = document.createElement("button");
+    btnCancelar.type = "button";
+    btnCancelar.textContent = "Cancelar";
+    btnCancelar.className = "botao-secundario botao-pequeno";
+    btnCancelar.onclick = (e) => {
+      e.stopPropagation();
+      formLi.remove();
+    };
+
+    const erro = document.createElement("p");
+    erro.className = "erro";
+    erro.setAttribute("role", "alert");
+    erro.style.margin = "0";
+
+    btnConfirmar.onclick = async (e) => {
+      // DIAG 4: início do handler de clique do "Confirmar recebimento".
+      console.log("[DIAG-RECEBER] 4. Clique recebido em 'Confirmar recebimento'", {
+        recebivelId: recebivel.id,
+        dataDigitada: campoData.value
+      });
+      e.stopPropagation();
+      if (!campoData.value) {
+        erro.textContent = "Informe a data do recebimento.";
+        console.log("[DIAG-RECEBER] 4b. Abortado: data não informada");
+        return;
+      }
+      btnConfirmar.disabled = true;
+      btnConfirmar.textContent = "Confirmando...";
+      // DIAG 5: imediatamente antes de chamar marcarRecebivelRecebido, com os parâmetros.
+      console.log("[DIAG-RECEBER] 5. Chamando marcarRecebivelRecebido com:", {
+        recebivel,
+        dataRecebidoISO: campoData.value,
+        uid
+      });
+      try {
+        const resultado = await marcarRecebivelRecebido(recebivel, campoData.value, uid);
+        // DIAG 6 (sucesso): a Promise resolveu.
+        console.log("[DIAG-RECEBER] 6. marcarRecebivelRecebido resolveu com sucesso", resultado);
+        await carregar();
+        console.log("[DIAG-RECEBER] 6b. carregar() concluído após sucesso");
+      } catch (erroRequisicao) {
+        // DIAG 6 (erro): a Promise rejeitou.
+        console.error("[DIAG-RECEBER] 6. marcarRecebivelRecebido REJEITOU com erro:", erroRequisicao);
+        erro.textContent = `Erro: ${erroRequisicao.message || erroRequisicao.code || "erro desconhecido"}`;
+        btnConfirmar.disabled = false;
+        btnConfirmar.textContent = "Confirmar recebimento";
+      }
+    };
+
+    linhaBotoes.appendChild(btnConfirmar);
+    linhaBotoes.appendChild(btnCancelar);
+    formLi.appendChild(campoData);
+    formLi.appendChild(linhaBotoes);
+    formLi.appendChild(erro);
+
+    subReferencia.after(formLi);
   }
 
   function criarItemAgrupado(titulo, total, pago, pendente, tipo, itens) {
@@ -118,6 +221,7 @@ export function initTelaMes({ categorias, uid }) {
 
       if (pendentesParaBotao.length > 0) {
         const btnAcaoGlobal = document.createElement("button");
+        btnAcaoGlobal.type = "button";
         btnAcaoGlobal.textContent = tipo === "receita" ? "Receber Tudo" : "Pagar Tudo";
         btnAcaoGlobal.className = "botao-secundario botao-pequeno";
         btnAcaoGlobal.style.marginLeft = "10px";
@@ -167,8 +271,37 @@ export function initTelaMes({ categorias, uid }) {
       
       const acoesDiv = document.createElement("div");
       
-      if (it.id) {
+      // Um item de /receber (recebimentos_terceiros pendente) não é um /lancamentos —
+      // não tem "tipo" nem "pago", tem "status". Precisa de um caminho de ação
+      // diferente (marcarRecebivelRecebido), em vez do atualizarLancamento/
+      // excluirLancamento abaixo, que apontam pro branch errado do banco.
+      const ehRecebivel = it.id && it.tipo === undefined && it.status !== undefined;
+
+      if (ehRecebivel) {
+        const btnReceber = document.createElement("button");
+        btnReceber.type = "button";
+        btnReceber.textContent = "Receber";
+        btnReceber.className = "botao-secundario botao-pequeno";
+        // DIAG 1: confirma que o botão foi criado e o listener anexado a ELE (não a um
+        // elemento que depois é substituído/recriado).
+        console.log("[DIAG-RECEBER] 1. Botão 'Receber' individual criado e listener anexado", {
+          recebivelId: it.id,
+          devedor: it.devedor,
+          mesEsperado: it.mesEsperado,
+          elemento: btnReceber
+        });
+        btnReceber.onclick = (e) => {
+          // DIAG 2: início do handler de clique do botão individual.
+          console.log("[DIAG-RECEBER] 2. Clique recebido em 'Receber' individual, item", it.id, it);
+          e.stopPropagation();
+          // DIAG 3: logo antes de abrir o mini-formulário de data.
+          console.log("[DIAG-RECEBER] 3. Abrindo mini-formulário de recebimento para", it.id);
+          alternarFormRecebimentoIndividual(sub, it);
+        };
+        acoesDiv.appendChild(btnReceber);
+      } else if (it.id) {
         const btnToggle = document.createElement("button");
+        btnToggle.type = "button";
         btnToggle.textContent = isPago ? "Desfazer" : (tipo === "receita" ? "Receber" : "Pagar");
         btnToggle.className = "botao-secundario botao-pequeno";
         btnToggle.style.marginRight = "8px";
@@ -183,8 +316,9 @@ export function initTelaMes({ categorias, uid }) {
             btnToggle.disabled = false;
           }
         };
-  
+
         const btnDel = document.createElement("button");
+        btnDel.type = "button";
         btnDel.textContent = "🗑️";
         btnDel.className = "botao-secundario botao-pequeno";
         btnDel.onclick = async (e) => {
@@ -200,7 +334,7 @@ export function initTelaMes({ categorias, uid }) {
               }
           }
         };
-  
+
         acoesDiv.appendChild(btnToggle);
         acoesDiv.appendChild(btnDel);
       } else {
