@@ -248,6 +248,9 @@ export async function marcarRecebivelRecebido(recebivel, dataRecebidoISO, uid) {
     meioPagamento: "transferencia",
     responsavel: "casal",
     idReembolso: recebivel.idReembolso,
+    idRecebivel: recebivel.id, // referência de volta ao /receber/{id} de origem, pra
+                               // ui/mes.js poder chamar desfazerRecebimento sem precisar
+                               // de uma consulta extra por índice não existente
     criadoPor: uid,
     criadoEm: agora,
     atualizadoEm: agora,

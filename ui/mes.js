@@ -11,6 +11,7 @@ import {
   excluirLancamento,
   atualizarLancamento,
   marcarRecebivelRecebido,
+  desfazerRecebimento,
   movimentarCaixa
 } from "../db.js";
 import {
@@ -20,7 +21,8 @@ import {
   somarMeses,
   projetarOcorrenciasDoMes,
   projetarOcorrenciasPorDesembolso,
-  obterMesDesembolso
+  obterMesDesembolso,
+  ehReceitaDeRecebivel
 } from "../logic.js";
 
 const NOMES_MES = [
@@ -261,6 +263,44 @@ export function initTelaMes({ categorias, uid }) {
           alternarFormRecebimentoIndividual(sub, it);
         };
         acoesDiv.appendChild(btnReceber);
+      } else if (ehReceitaDeRecebivel(it) && it.id) {
+        // Receita gerada pela baixa de um recebível (db.js marcarRecebivelRecebido) —
+        // "Desfazer" aqui precisa chamar EXATAMENTE desfazerRecebimento, a mesma função
+        // que a aba "A Receber" usa, nunca o toggle genérico de "pago" logo abaixo (era
+        // o bug: reimplementação paralela que nem revertia /receber nem movimentava o
+        // caixa). `idRecebivel` (gravado desde esta correção) é a referência de volta
+        // ao /receber de origem; desfazerRecebimento só usa id/lancamentoReceitaId/
+        // valorCentavos do objeto, então não precisamos reconsultar o /receber inteiro.
+        if (it.idRecebivel) {
+          const btnDesfazer = document.createElement("button");
+          btnDesfazer.type = "button";
+          btnDesfazer.textContent = "Desfazer";
+          btnDesfazer.className = "botao-secundario botao-pequeno";
+          btnDesfazer.onclick = async (e) => {
+            e.stopPropagation();
+            btnDesfazer.disabled = true;
+            try {
+              await desfazerRecebimento(
+                { id: it.idRecebivel, lancamentoReceitaId: it.id, valorCentavos: it.valorCentavos },
+                uid
+              );
+              await carregar();
+            } catch (erro) {
+              alert("Erro: " + erro.message);
+              btnDesfazer.disabled = false;
+            }
+          };
+          acoesDiv.appendChild(btnDesfazer);
+        } else {
+          // Receita antiga, gerada antes de idRecebivel existir — sem essa referência não
+          // dá pra chamar desfazerRecebimento sem uma consulta por índice inexistente.
+          // Desfazer continua possível pela aba "A Receber" (mesma função, a partir de lá).
+          const spanLegado = document.createElement("span");
+          spanLegado.textContent = 'Desfaça pela aba "A Receber"';
+          spanLegado.style.color = "var(--cor-texto-suave)";
+          spanLegado.style.fontSize = "0.85em";
+          acoesDiv.appendChild(spanLegado);
+        }
       } else if (it.id) {
         const btnToggle = document.createElement("button");
         btnToggle.type = "button";

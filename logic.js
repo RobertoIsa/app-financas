@@ -305,21 +305,28 @@ export function projetarOcorrenciasPorDesembolso(regras, mesAlvo, cartoesPorId =
 //      paga (`pago === true`) — antes disso ela existe mas não moveu nada ainda.
 // Crédito nunca move o caixa na criação (só na baixa da fatura, via pagarFaturaEmLote,
 // que já cobre pagamento_cartao à parte).
+// Identifica especificamente a receita gerada por db.js `marcarRecebivelRecebido` (na
+// baixa de um recebível) — reusado tanto pelos predicados de caixa abaixo quanto por
+// ui/mes.js, que precisa desviar o "Desfazer" desse item pra `desfazerRecebimento` em vez
+// do toggle genérico de `pago` (ver CLAUDE.md "Crédito a receber"). `marcarRecebivelRecebido`
+// sempre grava categoriaId "recebimentos_terceiros" + idReembolso, e NUNCA seta
+// `paraTerceiro` (só o formulário de lançamento manual seta esse campo).
+export function ehReceitaDeRecebivel(lancamento) {
+  return !!(
+    lancamento &&
+    lancamento.categoriaId === "recebimentos_terceiros" &&
+    lancamento.idReembolso &&
+    lancamento.paraTerceiro === undefined
+  );
+}
+
 export function lancamentoMoveCaixa(lancamento) {
   if (!lancamento) return false;
   if (lancamento.meioPagamento === "credito") return false;
   if (lancamento.categoriaId === "pagamento_cartao") return false; // tratado à parte
 
   if (lancamento.paraTerceiro !== undefined && !lancamento.idRecorrencia) return true;
-
-  if (
-    lancamento.categoriaId === "recebimentos_terceiros" &&
-    lancamento.idReembolso &&
-    lancamento.paraTerceiro === undefined
-  ) {
-    return true;
-  }
-
+  if (ehReceitaDeRecebivel(lancamento)) return true;
   if (lancamento.idRecorrencia && lancamento.pago === true) return true;
 
   return false;
@@ -331,8 +338,6 @@ export function lancamentoMoveCaixa(lancamento) {
 // "receita".
 export function origemCaixaDoLancamento(lancamento) {
   if (lancamento.idRecorrencia) return "recorrencia_paga";
-  if (lancamento.categoriaId === "recebimentos_terceiros" && lancamento.idReembolso) {
-    return "recebivel";
-  }
+  if (ehReceitaDeRecebivel(lancamento)) return "recebivel";
   return lancamento.tipo === "receita" ? "receita" : "despesa_imediata";
 }
