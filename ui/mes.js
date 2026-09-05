@@ -68,21 +68,11 @@ export function initTelaMes({ categorias, uid }) {
   // (ver ui/receber.js alternarFormRecebimento), só que reaproveitado aqui em vez de
   // chamar atualizarLancamento (que era o bug: um recebível não é um /lancamentos).
   function alternarFormRecebimentoIndividual(subReferencia, recebivel) {
-    // DIAG 3b: confirma que a função rodou de fato, e por qual ramo (fechar um form já
-    // aberto vs. criar um novo) — se cair sempre no ramo de "fechar", explicaria a tela
-    // "resetando" sem nada acontecer.
-    console.log("[DIAG-RECEBER] 3b. alternarFormRecebimentoIndividual chamada", {
-      recebivelId: recebivel.id,
-      subReferencia,
-      proximoIrmao: subReferencia.nextElementSibling
-    });
     const existente = subReferencia.nextElementSibling;
     if (existente && existente.dataset && existente.dataset.formRecebivel === recebivel.id) {
-      console.log("[DIAG-RECEBER] 3c. Form já existia — fechando (ramo 'remove')", recebivel.id);
       existente.remove();
       return;
     }
-    console.log("[DIAG-RECEBER] 3d. Nenhum form existente — vai criar um novo", recebivel.id);
 
     const formLi = document.createElement("li");
     formLi.dataset.formRecebivel = recebivel.id;
@@ -121,34 +111,17 @@ export function initTelaMes({ categorias, uid }) {
     erro.style.margin = "0";
 
     btnConfirmar.onclick = async (e) => {
-      // DIAG 4: início do handler de clique do "Confirmar recebimento".
-      console.log("[DIAG-RECEBER] 4. Clique recebido em 'Confirmar recebimento'", {
-        recebivelId: recebivel.id,
-        dataDigitada: campoData.value
-      });
       e.stopPropagation();
       if (!campoData.value) {
         erro.textContent = "Informe a data do recebimento.";
-        console.log("[DIAG-RECEBER] 4b. Abortado: data não informada");
         return;
       }
       btnConfirmar.disabled = true;
       btnConfirmar.textContent = "Confirmando...";
-      // DIAG 5: imediatamente antes de chamar marcarRecebivelRecebido, com os parâmetros.
-      console.log("[DIAG-RECEBER] 5. Chamando marcarRecebivelRecebido com:", {
-        recebivel,
-        dataRecebidoISO: campoData.value,
-        uid
-      });
       try {
-        const resultado = await marcarRecebivelRecebido(recebivel, campoData.value, uid);
-        // DIAG 6 (sucesso): a Promise resolveu.
-        console.log("[DIAG-RECEBER] 6. marcarRecebivelRecebido resolveu com sucesso", resultado);
+        await marcarRecebivelRecebido(recebivel, campoData.value, uid);
         await carregar();
-        console.log("[DIAG-RECEBER] 6b. carregar() concluído após sucesso");
       } catch (erroRequisicao) {
-        // DIAG 6 (erro): a Promise rejeitou.
-        console.error("[DIAG-RECEBER] 6. marcarRecebivelRecebido REJEITOU com erro:", erroRequisicao);
         erro.textContent = `Erro: ${erroRequisicao.message || erroRequisicao.code || "erro desconhecido"}`;
         btnConfirmar.disabled = false;
         btnConfirmar.textContent = "Confirmar recebimento";
@@ -282,20 +255,8 @@ export function initTelaMes({ categorias, uid }) {
         btnReceber.type = "button";
         btnReceber.textContent = "Receber";
         btnReceber.className = "botao-secundario botao-pequeno";
-        // DIAG 1: confirma que o botão foi criado e o listener anexado a ELE (não a um
-        // elemento que depois é substituído/recriado).
-        console.log("[DIAG-RECEBER] 1. Botão 'Receber' individual criado e listener anexado", {
-          recebivelId: it.id,
-          devedor: it.devedor,
-          mesEsperado: it.mesEsperado,
-          elemento: btnReceber
-        });
         btnReceber.onclick = (e) => {
-          // DIAG 2: início do handler de clique do botão individual.
-          console.log("[DIAG-RECEBER] 2. Clique recebido em 'Receber' individual, item", it.id, it);
           e.stopPropagation();
-          // DIAG 3: logo antes de abrir o mini-formulário de data.
-          console.log("[DIAG-RECEBER] 3. Abrindo mini-formulário de recebimento para", it.id);
           alternarFormRecebimentoIndividual(sub, it);
         };
         acoesDiv.appendChild(btnReceber);
