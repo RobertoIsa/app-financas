@@ -6,7 +6,7 @@
 // lerRecorrencias() a cada carregamento.
 
 import { lerRecorrencias, criarRecorrencia, atualizarRecorrencia } from "../db.js";
-import { parseValorParaCentavos, formatCentavos } from "../logic.js";
+import { parseValorParaCentavos, formatCentavos, resolverResponsavelPorUid } from "../logic.js";
 
 function formatarMesLabel(mesISO) {
   if (!mesISO) return "";
@@ -27,7 +27,6 @@ export function initTelaRecorrencias({ categorias, membros, cartoes, uid }) {
   const meioSelect = document.getElementById("rec-meio");
   const grupoCartao = document.getElementById("grupo-rec-cartao");
   const cartaoSelect = document.getElementById("rec-cartao");
-  const responsavelSelect = document.getElementById("rec-responsavel");
   const diaInput = document.getElementById("rec-dia");
   const inicioInput = document.getElementById("rec-inicio");
   const fimInput = document.getElementById("rec-fim");
@@ -74,21 +73,17 @@ export function initTelaRecorrencias({ categorias, membros, cartoes, uid }) {
     }
   }
 
-  function popularSelectResponsavel(responsavelSelecionado) {
-    responsavelSelect.innerHTML = "";
-    for (const membro of membrosCache) {
-      if (membro.ativo === false) continue;
-      const opt = document.createElement("option");
-      opt.value = membro.chave;
-      opt.textContent = membro.nome;
-      if (membro.chave === responsavelSelecionado) opt.selected = true;
-      responsavelSelect.appendChild(opt);
+  // responsavel não é mais escolhido manualmente (ver CLAUDE.md "Atribuição por pessoa
+  // (revisado)" — "casal" foi removido): é sempre a pessoa logada, deduzida do uid via
+  // /membros — igual pra criar quanto pra editar uma regra (editar também é "salvar").
+  // Fallback sensato se o uid não bater com nenhum /membros (não deveria acontecer dado
+  // a allowlist, mas não trava o salvamento).
+  function obterResponsavelAtual() {
+    const responsavel = resolverResponsavelPorUid(membrosCache, uid);
+    if (!membrosCache.some((m) => m.uid === uid)) {
+      console.warn(`Não foi possível determinar o responsável pelo uid ${uid} (nenhum /membros correspondente) — usando o uid como responsavel de fallback.`);
     }
-    const optCasal = document.createElement("option");
-    optCasal.value = "casal";
-    optCasal.textContent = "Casal";
-    if (responsavelSelecionado === "casal") optCasal.selected = true;
-    responsavelSelect.appendChild(optCasal);
+    return responsavel;
   }
 
   function cartoesAtivos() {
@@ -136,7 +131,6 @@ export function initTelaRecorrencias({ categorias, membros, cartoes, uid }) {
     meioSelect.value = regra.meioPagamento;
     atualizarVisibilidadeCredito();
     if (regra.meioPagamento === "credito") popularSelectCartao(regra.cartaoId);
-    popularSelectResponsavel(regra.responsavel);
     diaInput.value = regra.diaDoMes;
     inicioInput.value = regra.inicio || "";
     fimInput.value = regra.fim || "";
@@ -151,7 +145,6 @@ export function initTelaRecorrencias({ categorias, membros, cartoes, uid }) {
     editandoId = null;
     form.reset();
     popularSelectCategorias(tipoSelecionado());
-    popularSelectResponsavel();
     atualizarVisibilidadeCredito();
     btnSalvar.textContent = "Salvar recorrência";
     btnCancelar.hidden = true;
@@ -262,7 +255,7 @@ export function initTelaRecorrencias({ categorias, membros, cartoes, uid }) {
     const categoriaId = categoriaSelect.value;
     const descricao = descricaoInput.value.trim();
     const meioPagamento = meioSelect.value;
-    const responsavel = responsavelSelect.value;
+    const responsavel = obterResponsavelAtual();
     const diaDoMes = parseInt(diaInput.value, 10);
     const inicio = inicioInput.value;
     const fim = fimInput.value || null;
@@ -347,7 +340,6 @@ export function initTelaRecorrencias({ categorias, membros, cartoes, uid }) {
   });
 
   popularSelectCategorias(tipoSelecionado());
-  popularSelectResponsavel();
   atualizarVisibilidadeCredito();
   recarregar();
 

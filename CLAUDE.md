@@ -44,6 +44,30 @@ pendente, previsto ou projetado. Eventos que MOVEM o caixa:
 Eventos que NÃO movem o caixa: compra parcelada ainda não vencida, recebível pendente,
 recorrência ainda projetada/virtual (não materializada), fatura ainda não paga.
 
+### Caixinhas (orçamento mensal por pessoa, gastos do dia a dia)
+
+Duas caixinhas fixas, uma por pessoa (`roberto`, `esposa`) — não são um contador
+persistido; o saldo é **sempre calculado na hora** a partir dos lançamentos, exatamente
+como a tela "Mês" já faz, evitando o tipo de sincronismo frágil que o Caixa (contador)
+exigiu. Painel de cada caixinha mostra: **limite do mês** (definido pelo casal),
+**lançamentos que consumiram saldo** (lista), e **saldo restante** = limite − soma desses
+lançamentos daquele mês.
+
+- **Entra no cálculo da caixinha de uma pessoa:** despesas dela (`responsavel` = a pessoa)
+  no mês, que sejam **não-recorrentes** (`idRecorrencia` ausente) — os gastos soltos do dia
+  a dia (Restaurantes, Lazer, uma compra qualquer). Usa o eixo **gasto/competência**
+  (campo `mes`), não desembolso — é sobre "quanto você decidiu gastar este mês", não sobre
+  quando a fatura vence.
+- **Não entra:** despesas com `idRecorrencia` preenchido (essas têm limite próprio, fora da
+  caixinha), receitas, e — por decisão de que "casal" deixou de existir — nada fica "de
+  fora" por ambiguidade de responsável.
+- **Reseta todo mês:** ao virar o mês, a caixinha volta a valer o limite cheio — não
+  acumula sobra nem dívida de um mês pro outro (diferente do Caixa geral).
+- **Limite editável pelo casal**, guardado por pessoa e podendo variar mês a mês (ver nó
+  de dados). Sem desenho de alerta automático por enquanto (pode vir depois).
+
+> Ainda a implementar — ver "Estado da implementação".
+
 > Substitui o sistema atual de planilha (Google Sheets + Apps Script), preservando as
 > boas ideias já validadas ali: agrupamento de parcelas por `idCompra`, desdobramento
 > automático de parcelas, cascata para parcelas futuras, pagamento de fatura com
@@ -116,7 +140,8 @@ por mês agora — só quando/se crescer muito; ver "Arquivamento").
   chave: "roberto",           # chave estável usada em lancamentos.responsavel
   ativo: true
 }
-# "casal" é um responsavel virtual (compartilhado), tratado na UI — não é um membro.
+# "casal" foi REMOVIDO como responsavel (ver Decisões). responsavel agora é sempre
+# roberto|esposa, atribuído automaticamente pelo uid de quem está logado ao salvar.
 
 /categorias/{chave}: {        # o próprio slug é a chave do nó (ex.: categorias/mercado)
   nome: "Mercado",
@@ -147,9 +172,12 @@ por mês agora — só quando/se crescer muito; ver "Arquivamento").
   categoriaId: "mercado",
   meioPagamento: "credito",   # "dinheiro"|"debito"|"pix"|"transferencia"|"credito"
   cartaoId: "-Nyyy",          # só quando meioPagamento === "credito"
-  responsavel: "roberto",     # "roberto" | "esposa" | "casal" — de quem é o gasto.
-                              # DIFERENTE de criadoPor: quem digitou pode não ser
-                              # de quem é a despesa (ex.: você lança um gasto dela).
+  responsavel: "roberto",     # "roberto" | "esposa" — SEMPRE automático: é o `chave` do
+                              # /membros de quem está LOGADO ao salvar (criadoPor→membro).
+                              # Não é mais um campo escolhido manualmente, e "casal" não
+                              # existe mais como valor (ver Decisões). Igual a criadoPor
+                              # em todo lançamento novo — a distinção antiga (lançar por
+                              # alguém) foi removida de propósito nesta decisão.
 
   # --- só para compras no crédito ---
   faturaMes: "2026-08",       # ciclo de fatura em que a compra cai (fechamento)
@@ -200,13 +228,24 @@ por mês agora — só quando/se crescer muito; ver "Arquivamento").
   categoriaId: "moradia",
   meioPagamento: "pix",
   cartaoId: null,                # se for no crédito
-  responsavel: "casal",
+  responsavel: "roberto",        # roberto|esposa — automático (quem criou a regra), como
+                                  # em /lancamentos; "casal" não existe mais (ver Decisões)
   diaDoMes: 5,                   # dia base da ocorrência
   inicio: "2026-08",             # primeiro mês (YYYY-MM)
   fim: null,                     # null = sem fim; ou "2027-12"
   ativo: true,
   criadoPor, criadoEm, atualizadoEm
 }
+
+# Caixinhas: só o LIMITE é guardado (por pessoa, por mês) — o saldo/gasto é sempre
+# calculado na hora a partir de /lancamentos (ver "Caixinhas" em Caixa/regras de negócio).
+/caixinhas/{pessoa}/{mes}: {    # ex.: /caixinhas/roberto/2026-08
+  limiteCentavos: 50000,
+  definidoPor: "{uid}",
+  atualizadoEm: 1723650000000
+}
+# Se não existir doc para o mês corrente, a UI usa o limite do mês mais recente definido
+# como default sugerido (não copia automaticamente — casal confirma/ajusta cada mês).
 
 # Caixa: saldo acumulado real (não reseta por mês). Documento único + log de movimentos
 # para auditoria/desfazer. Nasce em 0. Só se move nos eventos listados em "Caixa (saldo
@@ -426,6 +465,9 @@ Funciona para qualquer mês — passado, atual ou futuro (é o que dá a previsi
       ".write": "auth != null && root.child('membros').child(auth.uid).exists()",
       "movimentos": { ".indexOn": ["origem", "lancamentoId"] }
     },
+    "caixinhas": {
+      ".write": "auth != null && root.child('membros').child(auth.uid).exists()"
+    },
     "logs":        { ".write": "auth != null && root.child('membros').child(auth.uid).exists()" }
   }
 }
@@ -438,6 +480,9 @@ Funciona para qualquer mês — passado, atual ou futuro (é o que dá a previsi
 > **Mesma coisa vale para `/caixa`:** essas regras (que já incluem o nó `/caixa` e seu
 > índice) precisam ser republicadas no console antes de codar o Caixa, senão toda escrita
 > em `/caixa/saldo` ou `/caixa/movimentos` falha com PERMISSION_DENIED.
+>
+> **E para `/caixinhas`:** mesmo aviso — republicar antes de implementar, senão
+> `PERMISSION_DENIED` ao salvar o limite mensal.
 
 - Escrita é concedida **ramo a ramo**, nunca na raiz. `/membros` fica sem regra de
   escrita → protegida (só se altera pelo console). **Cuidado com o RTDB:** regras
@@ -493,8 +538,8 @@ Funciona para qualquer mês — passado, atual ou futuro (é o que dá a previsi
    É a base que dá acesso a meses futuros/passados. **Próxima a construir.**
 4. **Projeção / Dashboard** — o coração do controle completo: para o mês selecionado,
    saídas previstas (desembolso), entradas previstas (receitas + recebíveis pendentes),
-   **saldo projetado**; totais por categoria e **por pessoa** (Roberto/Esposa/Casal);
-   idealmente uma faixa de vários meses à frente para ver a tendência.
+   **saldo projetado**; totais por categoria e **por pessoa** (Roberto/Esposa); idealmente
+   uma faixa de vários meses à frente para ver a tendência.
 5. **Faturas** — fatura por cartão/`faturaMes`; pagar (baixa) e desfazer.
 6. **A Receber** — créditos a receber por devedor: quanto cada um deve, o que está
    pendente por mês esperado, e botão de **baixa** (marcar recebido → vira receita).
@@ -508,7 +553,10 @@ Funciona para qualquer mês — passado, atual ou futuro (é o que dá a previsi
     e a origem de cada um (despesa imediata, pagamento de fatura, receita, baixa de
     recebível, recorrência paga). Não confundir com o "Saldo do Mês"/"Saldo Projetado"
     (que são por mês); este é o total acumulado desde o início do uso.
-11. **Ajustes** — exportar backup, tema, gerenciar membros (admin).
+11. **Caixinhas** — painel por pessoa (Roberto/Esposa): limite do mês (editável pelo
+    casal), lista dos gastos não-recorrentes do mês que consumiram saldo, e saldo
+    restante. Reseta todo mês; calculado na hora, sem contador persistido.
+12. **Ajustes** — exportar backup, tema, gerenciar membros (admin).
 
 ---
 
@@ -522,9 +570,16 @@ Funciona para qualquer mês — passado, atual ou futuro (é o que dá a previsi
 
 ## Decisões e trade-offs registrados
 
-- **Atribuição por pessoa:** cada lançamento tem `responsavel` (`roberto` | `esposa` |
-  `casal`). Dashboard tem visão por pessoa. `responsavel` é independente de `criadoPor`.
-- `casal` é um balde virtual (compartilhado), não um membro/UID.
+- **Atribuição por pessoa (revisado):** "casal" foi **removido** como valor de
+  `responsavel`. Agora só existe `roberto` | `esposa`, e é **sempre automático** — o
+  sistema atribui o `responsavel` de qualquer lançamento (e regra de recorrência) como a
+  pessoa **logada** no momento de salvar (via `criadoPor` → `/membros`), sem campo manual
+  para escolher. Motivo: simplicidade pedida pelo usuário, e é o dado que a caixinha usa
+  pra saber de quem descontar. **Histórico antigo com "casal" não será migrado** — o
+  usuário vai zerar a base de testes antes de usar pra valer, então a mudança vale só para
+  dados novos, sem necessidade de tratar retrocompatibilidade.
+- `casal` **não existe mais** como membro nem como responsável (ver acima) — nó `/membros`
+  continua só com os 2 UIDs reais.
 - **Categorias:** catálogo fechado com 26 despesas, 2 receitas, 2 de mão dupla
   (Investimentos, Empréstimo) e 1 de sistema (Pagamento de Fatura, oculta). "Alimentação"
   virou "Restaurantes" (par com "Mercado"). Incluídas 4 recorrentes: Água, Internet/Telefone,
@@ -547,6 +602,12 @@ Funciona para qualquer mês — passado, atual ou futuro (é o que dá a previsi
   escolhida pelo usuário). Só se move em eventos de dinheiro **real** (despesa imediata,
   pagamento de fatura, receita confirmada, baixa de recebível, recorrência paga) — nunca
   por algo pendente/projetado. Separado do "Saldo do Mês"/"Saldo Projetado" existentes.
+- **Caixinhas:** 2 fixas (Roberto/Esposa), limite mensal editável pelo casal, **resetam
+  todo mês** (não acumulam). Saldo **calculado na hora** (não é um contador com
+  movimentos como o Caixa) — soma as despesas não-recorrentes do mês daquela pessoa
+  (`responsavel` = pessoa, `idRecorrencia` ausente, eixo competência/`mes`) e subtrai do
+  limite. Escolha deliberada: evita replicar a complexidade de sincronismo que o Caixa
+  exigiu, já que aqui não há necessidade de acumular histórico indefinidamente.
 
 ---
 
@@ -576,16 +637,17 @@ tendem a ficar desconectados de lógica nova adicionada só ao caminho individua
 adicionar comportamento novo a uma ação, checar se existe caminho paralelo equivalente.
 
 **Próximos passos:**
-1. **Testar instalação PWA no iPhone** (esposa) — ainda não confirmado; Android já validado.
-2. **Gap conhecido, não bloqueante:** "Receber Tudo"/"Pagar Tudo" em grupos com recebível ou
+1. **Remover "casal"** de todo lugar que ainda oferece essa opção (formulário de
+   lançamento, formulário de recorrência) e tornar `responsavel` automático (pessoa
+   logada), como já registrado em Decisões. Pré-requisito das Caixinhas.
+2. **Caixinhas (Roberto/Esposa):** nó `/caixinhas` + regra já definida — **republicar as
+   regras no console antes de codar**. Implementar: tela de definir/editar limite mensal
+   por pessoa, painel calculado na hora (limite − soma de despesas não-recorrentes do
+   responsável naquele mês), lista dos lançamentos que consumiram saldo.
+3. **Testar instalação PWA no iPhone** (esposa) — ainda não confirmado; Android já validado.
+4. **Gap conhecido, não bloqueante:** "Receber Tudo"/"Pagar Tudo" em grupos com recebível ou
    recorrência misturados a outros tipos pode não ajustar o Caixa para todos os itens —
    revisar se aparecer na prática.
-
-**Ideias futuras (não detalhadas, retomar quando for a hora):**
-- **Controle por "caixinhas" de gastos do dia a dia** — orçamento por categoria (tipo
-  Alimentação, Lazer) para despesas que NÃO são recorrentes, à parte do que já existe.
-  Ainda sem desenho definido; discutir formato (limite mensal? alerta ao estourar?) quando
-  o usuário quiser avançar nisso.
 
 **Ajustes finos anotados:** rótulo "Valor da parcela" no crédito parcelado; melhorar o
 campo de data (fácil esquecer de trocar o dia); variável CSS `--texto-secundario` usada em

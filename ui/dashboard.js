@@ -81,16 +81,17 @@ export function initTelaDashboard({ categorias, membros, uid }) {
     return `${cat.nome}${cat.icone ? " " + cat.icone : ""}`;
   }
 
+  // "casal" foi removido como responsavel (ver CLAUDE.md "Atribuição por pessoa
+  // (revisado)") — só existem roberto/esposa agora, sempre atribuídos automaticamente.
+  // Histórico antigo com responsavel="casal" não é migrado (decisão do usuário); se
+  // aparecer aqui, cai no fallback abaixo (mostra a própria chave) em vez de travar.
   function nomePessoa(chave) {
-    if (chave === "casal") return "Casal";
     const membro = membrosCache.find((m) => m.chave === chave);
-    return membro ? membro.nome : (chave || "Casal");
+    return membro ? membro.nome : (chave || "Desconhecido");
   }
 
   function ordemPessoas() {
-    const chaves = membrosCache.filter((m) => m.ativo !== false).map((m) => m.chave);
-    if (!chaves.includes("casal")) chaves.push("casal");
-    return chaves;
+    return membrosCache.filter((m) => m.ativo !== false).map((m) => m.chave);
   }
 
   // Calcula o resumo de UM mês (saídas previstas, entradas previstas, saldo), reusando
@@ -208,7 +209,7 @@ export function initTelaDashboard({ categorias, membros, uid }) {
 
     const totais = new Map();
     [...itensReais, ...itensVirtuais].forEach((item) => {
-      const resp = item.responsavel || "casal";
+      const resp = item.responsavel || "desconhecido";
       if (!totais.has(resp)) totais.set(resp, { despesas: 0, receitas: 0 });
       const grupo = totais.get(resp);
       if (item.tipo === "despesa") grupo.despesas += item.valorCentavos;

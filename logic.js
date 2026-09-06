@@ -341,3 +341,15 @@ export function origemCaixaDoLancamento(lancamento) {
   if (ehReceitaDeRecebivel(lancamento)) return "recebivel";
   return lancamento.tipo === "receita" ? "receita" : "despesa_imediata";
 }
+
+// Resolve o `responsavel` (chave de /membros) a partir do uid de quem está logado — ver
+// CLAUDE.md "Atribuição por pessoa (revisado)": responsavel agora é SEMPRE automático
+// (nunca escolhido manualmente) e "casal" não existe mais como valor possível. Usada por
+// ui/lancamento.js e ui/recorrencias.js, que já têm a lista de /membros carregada em
+// cache — evita repetir esta consulta em cada arquivo. Fallback sensato se o uid não
+// bater com nenhum /membros (não deveria acontecer dado a allowlist, mas não trava o
+// salvamento): devolve o próprio uid; quem chama decide se registra um aviso.
+export function resolverResponsavelPorUid(membros, uid) {
+  const membro = (membros || []).find((m) => m.uid === uid);
+  return membro && membro.chave ? membro.chave : uid;
+}

@@ -269,6 +269,20 @@ export async function atualizarRecebivel(id, dados) {
   await update(ref(db, `receber/${id}`), { ...dados, atualizadoEm: Date.now() });
 }
 
+// Resolve o `responsavel` (chave de /membros) a partir do uid de quem está logado — ver
+// CLAUDE.md "Atribuição por pessoa (revisado)": responsavel é sempre automático, nunca
+// "casal". Usado só pelas funções deste arquivo que geram um lançamento sem um formulário
+// por trás (marcarRecebivelRecebido, pagarFaturaEmLote) — ui/lancamento.js e
+// ui/recorrencias.js já têm /membros em cache e usam logic.js `resolverResponsavelPorUid`
+// (síncrono) em vez desta versão, que lê do banco. Fallback sensato se o uid não bater com
+// nenhum /membros (não deveria acontecer dado a allowlist, mas não trava o salvamento).
+export async function obterResponsavelPorUid(uid) {
+  const snapshot = await get(ref(db, `membros/${uid}`));
+  if (snapshot.exists() && snapshot.val().chave) return snapshot.val().chave;
+  console.warn(`obterResponsavelPorUid: nenhum /membros/${uid} encontrado — usando o uid como responsavel de fallback.`);
+  return uid;
+}
+
 // Baixa de um recebível: marca status "recebido" + dataRecebido, e gera a receita real
 // em /lancamentos (categoria recebimentos_terceiros — ver CLAUDE.md "Crédito a
 // receber"), numa única operação atômica (update multi-caminho). Em seguida, best-effort
@@ -277,6 +291,7 @@ export async function atualizarRecebivel(id, dados) {
 // real)").
 export async function marcarRecebivelRecebido(recebivel, dataRecebidoISO, uid) {
   const agora = Date.now();
+  const responsavel = await obterResponsavelPorUid(uid);
   const novaReceitaRef = push(ref(db, "lancamentos"));
   const receita = {
     tipo: "receita",
@@ -287,7 +302,7 @@ export async function marcarRecebivelRecebido(recebivel, dataRecebidoISO, uid) {
     descricao: `Recebimento de ${recebivel.devedor}`,
     categoriaId: "recebimentos_terceiros",
     meioPagamento: "transferencia",
-    responsavel: "casal",
+    responsavel,
     idReembolso: recebivel.idReembolso,
     idRecebivel: recebivel.id, // referência de volta ao /receber/{id} de origem, pra
                                // ui/mes.js poder chamar desfazerRecebimento sem precisar
@@ -429,6 +444,7 @@ export async function lerLancamentosPorFaturaMes(faturaMes) {
 export async function pagarFaturaEmLote(lancamentosIds, totalCentavos, faturaMes, dataPagamento, meioPagamento, uid) {
   const atualizacoes = {};
   const agora = Date.now();
+  const responsavel = await obterResponsavelPorUid(uid);
 
   console.log("🔥 [FIREBASE] Iniciando pagamento em lote. IDs das compras:", lancamentosIds);
 
@@ -451,7 +467,7 @@ export async function pagarFaturaEmLote(lancamentosIds, totalCentavos, faturaMes
     data: dataPagamento,
     meioPagamento: meioPagamento,
     categoriaId: 'pagamento_cartao',
-    responsavel: 'casal',
+    responsavel,
     pago: true,
     criadoPor: uid,
     criadoEm: agora,

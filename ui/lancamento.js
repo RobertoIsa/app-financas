@@ -18,7 +18,8 @@ import {
   mesDeData,
   gerarParcelas,
   gerarRecebiveis,
-  lancamentoMoveCaixa
+  lancamentoMoveCaixa,
+  resolverResponsavelPorUid
 } from "../logic.js";
 
 export function initTelaLancamento({ categorias, membros, cartoes, uid, irParaCartoes }) {
@@ -38,7 +39,6 @@ export function initTelaLancamento({ categorias, membros, cartoes, uid, irParaCa
   const grupoTerceiro = document.getElementById("grupo-terceiro");
   const devedorInput = document.getElementById("lanc-devedor");
   const numRecebimentosInput = document.getElementById("lanc-num-recebimentos");
-  const responsavelSelect = document.getElementById("lanc-responsavel");
   const dataInput = document.getElementById("lanc-data");
   const lancamentoErro = document.getElementById("lancamento-erro");
   const lancamentoSucesso = document.getElementById("lancamento-sucesso");
@@ -105,19 +105,16 @@ export function initTelaLancamento({ categorias, membros, cartoes, uid, irParaCa
     }
   }
 
-  function popularSelectResponsavel() {
-    responsavelSelect.innerHTML = "";
-    for (const membro of membrosCache) {
-      if (membro.ativo === false) continue;
-      const opt = document.createElement("option");
-      opt.value = membro.chave;
-      opt.textContent = membro.nome;
-      responsavelSelect.appendChild(opt);
+  // responsavel não é mais escolhido manualmente (ver CLAUDE.md "Atribuição por pessoa
+  // (revisado)" — "casal" foi removido): é sempre a pessoa logada, deduzida do uid via
+  // /membros. Fallback sensato (não trava o salvamento) se o uid não bater com nenhum
+  // /membros — não deveria acontecer dado a allowlist, mas registra um aviso se ocorrer.
+  function obterResponsavelAtual() {
+    const responsavel = resolverResponsavelPorUid(membrosCache, uid);
+    if (!membrosCache.some((m) => m.uid === uid)) {
+      console.warn(`Não foi possível determinar o responsável pelo uid ${uid} (nenhum /membros correspondente) — usando o uid como responsavel de fallback.`);
     }
-    const optCasal = document.createElement("option");
-    optCasal.value = "casal";
-    optCasal.textContent = "Casal";
-    responsavelSelect.appendChild(optCasal);
+    return responsavel;
   }
 
   function cartoesAtivos() {
@@ -425,15 +422,11 @@ export function initTelaLancamento({ categorias, membros, cartoes, uid, irParaCa
     const categoriaId = categoriaSelect.value;
     const descricao = descricaoInput.value.trim();
     const meioPagamento = meioSelect.value;
-    const responsavel = responsavelSelect.value;
+    const responsavel = obterResponsavelAtual();
     const data = dataInput.value;
 
     if (isNaN(valorCentavos) || valorCentavos <= 0) {
       lancamentoErro.textContent = "Informe um valor válido maior que zero.";
-      return;
-    }
-    if (!responsavel) {
-      lancamentoErro.textContent = "Selecione o responsável.";
       return;
     }
     if (!data) {
@@ -664,7 +657,6 @@ export function initTelaLancamento({ categorias, membros, cartoes, uid, irParaCa
   });
 
   dataInput.value = dataHojeISO();
-  popularSelectResponsavel();
   atualizarInterface();
   carregarLancamentosDoMes();
 
