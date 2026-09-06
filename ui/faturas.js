@@ -1,5 +1,16 @@
 // ui/faturas.js
 import { lerLancamentosDaFatura, pagarFaturaEmLote } from "../db.js";
+import { mesDeData, dataHojeISO, somarMeses } from "../logic.js";
+
+const NOMES_MES = [
+  "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+  "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
+];
+
+function formatarMesAno(mesISO) {
+  const [ano, mes] = mesISO.split("-").map(Number);
+  return `${NOMES_MES[mes - 1]}/${ano}`;
+}
 
 export function initTelaFaturas({ cartoes, uid }) {
   const selectCartao = document.getElementById("fatura-cartao");
@@ -34,6 +45,24 @@ export function initTelaFaturas({ cartoes, uid }) {
       opt.textContent = cartao.nome;
       selectCartao.appendChild(opt);
     });
+  }
+
+  // Popula o dropdown de mês com 6 meses pra trás e 12 meses pra frente do mês atual,
+  // em ordem cronológica, rotulados "Mês/Ano" (ex.: "Fevereiro/2026") — substitui o
+  // <input type="month"> nativo, que era pouco prático nesta tela. O mês atual vem
+  // pré-selecionado. Não muda em nada a lógica de busca/conciliação: executarBuscaFatura
+  // e o submit de pagamento continuam lendo inputMes.value normalmente.
+  function popularSelectMes() {
+    const mesAtual = mesDeData(dataHojeISO());
+    inputMes.innerHTML = "";
+    for (let i = -6; i <= 12; i++) {
+      const mes = somarMeses(mesAtual, i);
+      const opt = document.createElement("option");
+      opt.value = mes;
+      opt.textContent = formatarMesAno(mes);
+      if (mes === mesAtual) opt.selected = true;
+      inputMes.appendChild(opt);
+    }
   }
 
   async function executarBuscaFatura() {
@@ -174,6 +203,7 @@ export function initTelaFaturas({ cartoes, uid }) {
   });
 
   popularCartoes(cartoes);
+  popularSelectMes();
 
   return {
     recarregarCartoes: popularCartoes
