@@ -581,6 +581,12 @@ adicionar comportamento novo a uma ação, checar se existe caminho paralelo equ
    recorrência misturados a outros tipos pode não ajustar o Caixa para todos os itens —
    revisar se aparecer na prática.
 
+**Ideias futuras (não detalhadas, retomar quando for a hora):**
+- **Controle por "caixinhas" de gastos do dia a dia** — orçamento por categoria (tipo
+  Alimentação, Lazer) para despesas que NÃO são recorrentes, à parte do que já existe.
+  Ainda sem desenho definido; discutir formato (limite mensal? alerta ao estourar?) quando
+  o usuário quiser avançar nisso.
+
 **Ajustes finos anotados:** rótulo "Valor da parcela" no crédito parcelado; melhorar o
 campo de data (fácil esquecer de trocar o dia); variável CSS `--texto-secundario` usada em
 ui/mes.js não existe em styles.css (a real é `--cor-texto-suave`) — bug pré-existente, não

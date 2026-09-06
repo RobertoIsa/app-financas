@@ -139,6 +139,224 @@ export function initTelaMes({ categorias, uid }) {
     subReferencia.after(formLi);
   }
 
+  // Cria o botão "Desfazer" (ou o aviso de fallback) pra uma receita gerada por baixa de
+  // recebível — reaproveitado tanto pelo loop genérico de itens quanto pela seção
+  // reorganizada "Recebimentos de Terceiros" abaixo, pra nunca existirem dois caminhos
+  // que chamem desfazerRecebimento de formas diferentes.
+  function criarAcaoDesfazerRecebivel(lancamento) {
+    if (lancamento.idRecebivel) {
+      const btnDesfazer = document.createElement("button");
+      btnDesfazer.type = "button";
+      btnDesfazer.textContent = "Desfazer";
+      btnDesfazer.className = "botao-secundario botao-pequeno";
+      btnDesfazer.onclick = async (e) => {
+        e.stopPropagation();
+        btnDesfazer.disabled = true;
+        try {
+          await desfazerRecebimento(
+            { id: lancamento.idRecebivel, lancamentoReceitaId: lancamento.id, valorCentavos: lancamento.valorCentavos },
+            uid
+          );
+          await carregar();
+        } catch (erro) {
+          alert("Erro: " + erro.message);
+          btnDesfazer.disabled = false;
+        }
+      };
+      return btnDesfazer;
+    }
+
+    // Receita antiga, gerada antes de idRecebivel existir — sem essa referência não dá
+    // pra chamar desfazerRecebimento sem uma consulta por índice inexistente. Desfazer
+    // continua possível pela aba "A Receber" (mesma função, a partir de lá).
+    const spanLegado = document.createElement("span");
+    spanLegado.textContent = 'Desfaça pela aba "A Receber"';
+    spanLegado.style.color = "var(--cor-texto-suave)";
+    spanLegado.style.fontSize = "0.85em";
+    return spanLegado;
+  }
+
+  // Seção "Recebimentos de Terceiros" reorganizada: pendentes agrupados por devedor
+  // (mesmo padrão visual/estrutural da aba "A Receber" — ver ui/receber.js
+  // renderizarPendentes), com um "Receber Tudo" POR DEVEDOR; já recebidos continuam numa
+  // lista simples abaixo, igual à aba "A Receber" também não agrupa os recebidos.
+  // Reaproveita marcarRecebivelRecebido/desfazerRecebimento em todo caminho — nunca um
+  // atualizarLancamento(id, {pago}) direto aqui, pra não reincidir no bug de "Receber
+  // Tudo"/"Pagar Tudo" desconectado da lógica de caixa (já visto mais de uma vez).
+  function criarItemRecebimentosTerceiros(titulo, total, pago, pendente, itens) {
+    const item = document.createElement("li");
+    item.className = "lanc-item";
+    item.style.flexDirection = "column";
+    item.style.alignItems = "stretch";
+
+    const linhaPrincipal = document.createElement("div");
+    linhaPrincipal.className = "lanc-item-linha";
+    linhaPrincipal.style.cursor = "pointer";
+
+    const desc = document.createElement("span");
+    desc.className = "lanc-desc";
+    desc.style.fontWeight = "bold";
+    desc.textContent = titulo;
+
+    const valorTotal = document.createElement("span");
+    valorTotal.className = "lanc-valor lanc-receita";
+    valorTotal.textContent = `+ ${formatCentavos(total)}`;
+
+    linhaPrincipal.appendChild(desc);
+    linhaPrincipal.appendChild(valorTotal);
+    item.appendChild(linhaPrincipal);
+
+    const painelDetalhes = document.createElement("div");
+    painelDetalhes.style.display = "none";
+    painelDetalhes.style.marginTop = "10px";
+    painelDetalhes.style.paddingTop = "10px";
+    painelDetalhes.style.borderTop = "1px solid var(--borda)";
+
+    if (total > 0) {
+      const linhaDetalhe = document.createElement("div");
+      linhaDetalhe.style.fontSize = "0.85em";
+      linhaDetalhe.style.color = "var(--cor-texto-suave)";
+      linhaDetalhe.style.marginBottom = "10px";
+      linhaDetalhe.style.display = "flex";
+      linhaDetalhe.style.justifyContent = "space-between";
+      linhaDetalhe.innerHTML = `<span>✅ Recebido: R$ ${formatCentavos(pago)}</span><span>⏳ A Receber: R$ ${formatCentavos(pendente)}</span>`;
+      painelDetalhes.appendChild(linhaDetalhe);
+    }
+
+    // Um item de /receber (pendente) não tem "tipo" nem "pago" — tem "status". A receita
+    // já baixada (ehReceitaDeRecebivel) é um /lancamentos de verdade.
+    const pendentesRaw = (itens || []).filter((it) => it.id && it.tipo === undefined && it.status !== undefined);
+    const jaRecebidos = (itens || []).filter((it) => it.id && ehReceitaDeRecebivel(it));
+
+    if (pendentesRaw.length > 0) {
+      const porDevedor = new Map();
+      pendentesRaw.forEach((r) => {
+        const chave = r.devedor || "Sem devedor";
+        if (!porDevedor.has(chave)) porDevedor.set(chave, []);
+        porDevedor.get(chave).push(r);
+      });
+
+      for (const [devedor, itensDevedor] of porDevedor) {
+        const totalDevedor = itensDevedor.reduce((soma, r) => soma + r.valorCentavos, 0);
+
+        const blocoDevedor = document.createElement("div");
+        blocoDevedor.style.marginBottom = "12px";
+
+        const linhaDevedor = document.createElement("div");
+        linhaDevedor.style.display = "flex";
+        linhaDevedor.style.justifyContent = "space-between";
+        linhaDevedor.style.alignItems = "center";
+        linhaDevedor.style.fontWeight = "bold";
+        linhaDevedor.style.fontSize = "0.9em";
+
+        const nomeDevedorEl = document.createElement("span");
+        nomeDevedorEl.textContent = `${devedor}: ${formatCentavos(totalDevedor)} pendente`;
+        linhaDevedor.appendChild(nomeDevedorEl);
+
+        const btnReceberTudoDevedor = document.createElement("button");
+        btnReceberTudoDevedor.type = "button";
+        btnReceberTudoDevedor.textContent = "Receber Tudo";
+        btnReceberTudoDevedor.className = "botao-secundario botao-pequeno";
+        btnReceberTudoDevedor.onclick = async (e) => {
+          e.stopPropagation();
+          btnReceberTudoDevedor.disabled = true;
+          btnReceberTudoDevedor.textContent = "...";
+          try {
+            // Mesma função usada pelo botão individual e pela aba "A Receber" — chamada
+            // uma vez por item SÓ deste devedor (itensDevedor), nunca os de outro devedor
+            // do mesmo grupo. Data de hoje pra todos, igual ao "Pagar Tudo" já existente.
+            await Promise.all(itensDevedor.map((r) => marcarRecebivelRecebido(r, dataHojeISO(), uid)));
+            await carregar();
+          } catch (erro) {
+            alert("Erro ao receber: " + erro.message);
+            btnReceberTudoDevedor.disabled = false;
+            btnReceberTudoDevedor.textContent = "Receber Tudo";
+          }
+        };
+        linhaDevedor.appendChild(btnReceberTudoDevedor);
+        blocoDevedor.appendChild(linhaDevedor);
+
+        const listaItensDevedor = document.createElement("ul");
+        listaItensDevedor.style.listStyle = "none";
+        listaItensDevedor.style.padding = "0";
+        listaItensDevedor.style.margin = "4px 0 0";
+        listaItensDevedor.style.fontSize = "0.9em";
+
+        itensDevedor.forEach((r) => {
+          const sub = document.createElement("li");
+          sub.style.padding = "6px 0";
+          sub.style.borderBottom = "1px solid var(--fundo)";
+          sub.style.display = "flex";
+          sub.style.justifyContent = "space-between";
+          sub.style.alignItems = "center";
+
+          const textSpan = document.createElement("span");
+          textSpan.textContent = `⏳ ${r.devedor || "Sem devedor"} - R$ ${formatCentavos(r.valorCentavos)}`;
+
+          const btnReceber = document.createElement("button");
+          btnReceber.type = "button";
+          btnReceber.textContent = "Receber";
+          btnReceber.className = "botao-secundario botao-pequeno";
+          btnReceber.onclick = (e) => {
+            e.stopPropagation();
+            alternarFormRecebimentoIndividual(sub, r);
+          };
+
+          sub.appendChild(textSpan);
+          sub.appendChild(btnReceber);
+          listaItensDevedor.appendChild(sub);
+        });
+
+        blocoDevedor.appendChild(listaItensDevedor);
+        painelDetalhes.appendChild(blocoDevedor);
+      }
+    }
+
+    if (jaRecebidos.length > 0) {
+      const tituloRecebidos = document.createElement("h4");
+      tituloRecebidos.textContent = "Recebidos";
+      tituloRecebidos.style.margin = pendentesRaw.length > 0 ? "4px 0" : "0 0 4px";
+      tituloRecebidos.style.fontSize = "0.85em";
+      tituloRecebidos.style.color = "var(--cor-texto-suave)";
+      painelDetalhes.appendChild(tituloRecebidos);
+
+      const listaRecebidos = document.createElement("ul");
+      listaRecebidos.style.listStyle = "none";
+      listaRecebidos.style.padding = "0";
+      listaRecebidos.style.margin = "0";
+      listaRecebidos.style.fontSize = "0.9em";
+
+      jaRecebidos.forEach((l) => {
+        const sub = document.createElement("li");
+        sub.style.padding = "6px 0";
+        sub.style.borderBottom = "1px solid var(--fundo)";
+        sub.style.display = "flex";
+        sub.style.justifyContent = "space-between";
+        sub.style.alignItems = "center";
+
+        const textSpan = document.createElement("span");
+        textSpan.textContent = `✅ ${l.descricao || "Lançamento"} - R$ ${formatCentavos(l.valorCentavos)}`;
+
+        const acoesDiv = document.createElement("div");
+        acoesDiv.appendChild(criarAcaoDesfazerRecebivel(l));
+
+        sub.appendChild(textSpan);
+        sub.appendChild(acoesDiv);
+        listaRecebidos.appendChild(sub);
+      });
+
+      painelDetalhes.appendChild(listaRecebidos);
+    }
+
+    item.appendChild(painelDetalhes);
+
+    linhaPrincipal.addEventListener("click", () => {
+      painelDetalhes.style.display = painelDetalhes.style.display === "none" ? "block" : "none";
+    });
+
+    return item;
+  }
+
   function criarItemAgrupado(titulo, total, pago, pendente, tipo, itens) {
     const item = document.createElement("li");
     item.className = "lanc-item";
@@ -253,62 +471,14 @@ export function initTelaMes({ categorias, uid }) {
       textSpan.textContent = `${statusIcon} ${descricaoItem} - R$ ${formatCentavos(it.valorCentavos)}`;
       
       const acoesDiv = document.createElement("div");
-      
-      // Um item de /receber (recebimentos_terceiros pendente) não é um /lancamentos —
-      // não tem "tipo" nem "pago", tem "status". Precisa de um caminho de ação
-      // diferente (marcarRecebivelRecebido), em vez do atualizarLancamento/
-      // excluirLancamento abaixo, que apontam pro branch errado do banco.
-      const ehRecebivel = it.id && it.tipo === undefined && it.status !== undefined;
 
-      if (ehRecebivel) {
-        const btnReceber = document.createElement("button");
-        btnReceber.type = "button";
-        btnReceber.textContent = "Receber";
-        btnReceber.className = "botao-secundario botao-pequeno";
-        btnReceber.onclick = (e) => {
-          e.stopPropagation();
-          alternarFormRecebimentoIndividual(sub, it);
-        };
-        acoesDiv.appendChild(btnReceber);
-      } else if (ehReceitaDeRecebivel(it) && it.id) {
-        // Receita gerada pela baixa de um recebível (db.js marcarRecebivelRecebido) —
-        // "Desfazer" aqui precisa chamar EXATAMENTE desfazerRecebimento, a mesma função
-        // que a aba "A Receber" usa, nunca o toggle genérico de "pago" logo abaixo (era
-        // o bug: reimplementação paralela que nem revertia /receber nem movimentava o
-        // caixa). `idRecebivel` (gravado desde esta correção) é a referência de volta
-        // ao /receber de origem; desfazerRecebimento só usa id/lancamentoReceitaId/
-        // valorCentavos do objeto, então não precisamos reconsultar o /receber inteiro.
-        if (it.idRecebivel) {
-          const btnDesfazer = document.createElement("button");
-          btnDesfazer.type = "button";
-          btnDesfazer.textContent = "Desfazer";
-          btnDesfazer.className = "botao-secundario botao-pequeno";
-          btnDesfazer.onclick = async (e) => {
-            e.stopPropagation();
-            btnDesfazer.disabled = true;
-            try {
-              await desfazerRecebimento(
-                { id: it.idRecebivel, lancamentoReceitaId: it.id, valorCentavos: it.valorCentavos },
-                uid
-              );
-              await carregar();
-            } catch (erro) {
-              alert("Erro: " + erro.message);
-              btnDesfazer.disabled = false;
-            }
-          };
-          acoesDiv.appendChild(btnDesfazer);
-        } else {
-          // Receita antiga, gerada antes de idRecebivel existir — sem essa referência não
-          // dá pra chamar desfazerRecebimento sem uma consulta por índice inexistente.
-          // Desfazer continua possível pela aba "A Receber" (mesma função, a partir de lá).
-          const spanLegado = document.createElement("span");
-          spanLegado.textContent = 'Desfaça pela aba "A Receber"';
-          spanLegado.style.color = "var(--cor-texto-suave)";
-          spanLegado.style.fontSize = "0.85em";
-          acoesDiv.appendChild(spanLegado);
-        }
-      } else if (it.id) {
+      // Itens de /receber (recebível pendente) e a receita gerada por baixa de
+      // recebível nunca chegam aqui — a categoria "recebimentos_terceiros" é
+      // interceptada em carregar() e renderizada por criarItemRecebimentosTerceiros,
+      // que reagrupa por devedor e reaproveita marcarRecebivelRecebido/
+      // desfazerRecebimento diretamente (ver função acima). Este loop só trata
+      // despesas/receitas/recorrências normais.
+      if (it.id) {
         const btnToggle = document.createElement("button");
         btnToggle.type = "button";
         btnToggle.textContent = isPago ? "Desfazer" : (tipo === "receita" ? "Receber" : "Pagar");
@@ -544,7 +714,14 @@ export function initTelaMes({ categorias, uid }) {
         listaReceitas.innerHTML = "";
         if (Object.keys(gruposReceitas).length === 0) listaReceitas.innerHTML = "<li class='lanc-item'>Nenhuma receita neste mês.</li>";
         for (const [catId, dados] of Object.entries(gruposReceitas)) {
-          listaReceitas.appendChild(criarItemAgrupado(obterNomeIconeCategoria(catId), dados.total, dados.pago, dados.pendente, "receita", dados.itens));
+          // "Recebimentos de Terceiros" tem estrutura própria (agrupado por devedor,
+          // ver criarItemRecebimentosTerceiros) — todas as outras categorias de receita
+          // continuam pelo caminho genérico de sempre.
+          if (catId === "recebimentos_terceiros") {
+            listaReceitas.appendChild(criarItemRecebimentosTerceiros(obterNomeIconeCategoria(catId), dados.total, dados.pago, dados.pendente, dados.itens));
+          } else {
+            listaReceitas.appendChild(criarItemAgrupado(obterNomeIconeCategoria(catId), dados.total, dados.pago, dados.pendente, "receita", dados.itens));
+          }
         }
       }
 
