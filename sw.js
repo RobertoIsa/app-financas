@@ -1,4 +1,4 @@
-const CACHE_NAME = 'financas-v18';
+const CACHE_NAME = 'financas-v19';
 const ASSETS = [
   './',
   './index.html',
@@ -14,6 +14,7 @@ const ASSETS = [
   './ui/faturas.js',
   './ui/dashboard.js',
   './ui/caixa.js',
+  './ui/caixinhas.js',
   './manifest.json',
   './icons/icon-192.png',
   './icons/icon-512.png',

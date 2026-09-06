@@ -784,6 +784,139 @@ section + section {
   font-size: 0.9375rem;
 }
 
+#caixinhas-status {
+  color: var(--cor-texto-suave);
+  font-size: 0.9375rem;
+}
+
+.caixinhas-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.caixinha-painel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  background-color: var(--cor-card);
+  border: 1px solid var(--cor-borda);
+  border-radius: var(--raio);
+  padding: 1rem;
+}
+
+.caixinha-painel-estourou {
+  border-color: var(--cor-erro);
+}
+
+.caixinha-nome {
+  margin: 0;
+  font-size: 1.0625rem;
+}
+
+.caixinha-numeros {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.caixinha-linha {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.caixinha-rotulo {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--cor-texto-suave);
+}
+
+.caixinha-valor {
+  font-weight: 600;
+}
+
+.caixinha-linha-saldo {
+  border-top: 1px solid var(--cor-borda);
+  padding-top: 0.375rem;
+}
+
+.caixinha-linha-saldo .caixinha-rotulo,
+.caixinha-linha-saldo .caixinha-valor {
+  font-size: 1.0625rem;
+  font-weight: 700;
+}
+
+.caixinha-valor.caixinha-estourou {
+  color: var(--cor-erro);
+}
+
+.caixinha-aviso {
+  margin: 0;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--cor-erro);
+}
+
+.caixinha-form-limite {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  border-top: 1px solid var(--cor-borda);
+  padding-top: 0.75rem;
+}
+
+.caixinha-form-linha {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.caixinha-form-linha input {
+  flex: 1;
+  min-width: 0;
+}
+
+.caixinha-form-limite .erro {
+  min-height: 0;
+}
+
+.caixinha-lista-titulo {
+  margin: 0.25rem 0 0;
+  font-size: 0.875rem;
+  color: var(--cor-texto-suave);
+}
+
+.caixinha-lista {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.caixinha-lista .lanc-item {
+  background-color: var(--cor-fundo);
+}
+
+.caixinha-vazia {
+  color: var(--cor-texto-suave);
+  font-size: 0.9375rem;
+}
+
+@media (min-width: 768px) {
+  .caixinhas-grid {
+    flex-direction: row;
+    align-items: flex-start;
+  }
+
+  .caixinha-painel {
+    flex: 1;
+    min-width: 0;
+  }
+}
+
 @media (min-width: 768px) {
   main {
     max-width: 40rem;

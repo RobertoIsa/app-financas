@@ -681,3 +681,27 @@ export async function lerObservacoes(uid) {
 export async function salvarObservacoes(uid, texto) {
   await set(ref(db, `observacoes/${uid}`), { texto, atualizadoEm: Date.now() });
 }
+
+// ---- Caixinhas (orçamento mensal por pessoa) — ver CLAUDE.md "Caixinhas" ----
+// Só o LIMITE é guardado (por pessoa, por mês). O saldo/gasto NUNCA é persistido: é
+// sempre calculado na hora em ui/caixinhas.js a partir de /lancamentos, do mesmo jeito
+// que a tela "Mês" faz — escolha deliberada pra não replicar o sincronismo frágil que o
+// Caixa (contador) exigiu.
+
+// Lê o limite de uma pessoa num mês (YYYY-MM). Devolve null se ainda não foi definido —
+// a UI trata esse caso (aviso "Defina o limite deste mês"); NÃO copia de um mês anterior.
+export async function lerCaixinhaLimite(pessoa, mes) {
+  const snapshot = await get(ref(db, `caixinhas/${pessoa}/${mes}`));
+  if (!snapshot.exists()) return null;
+  return snapshot.val();
+}
+
+// Grava/atualiza o limite de uma pessoa num mês. Qualquer membro logado pode definir o
+// limite de qualquer caixinha (é decisão do casal, não trava individual — ver CLAUDE.md).
+export async function salvarCaixinhaLimite(pessoa, mes, limiteCentavos, uid) {
+  await set(ref(db, `caixinhas/${pessoa}/${mes}`), {
+    limiteCentavos,
+    definidoPor: uid,
+    atualizadoEm: Date.now()
+  });
+}

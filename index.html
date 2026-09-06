@@ -46,6 +46,7 @@
         <button type="button" class="nav-botao" data-tela="observacoes">Observações</button>
         <button type="button" class="nav-botao" data-tela="mes">Mês</button>
         <button type="button" class="nav-botao" data-tela="caixa">Caixa</button>
+        <button type="button" class="nav-botao" data-tela="caixinhas">Caixinhas</button>
         <button type="button" class="nav-botao" data-tela="receber">A Receber</button>
         <button type="button" class="nav-botao" data-tela="cartoes">Cartões</button>
         <button type="button" class="nav-botao" data-tela="faturas">Faturas</button> <!-- NOVO BOTÃO -->
@@ -267,6 +268,19 @@
           <h2 id="caixa-movimentos-titulo">Movimentos recentes</h2>
           <p id="caixa-status" role="status" aria-live="polite"></p>
           <ul id="lista-caixa-movimentos"></ul>
+        </section>
+      </div>
+
+      <div id="tela-caixinhas" hidden>
+        <section aria-labelledby="caixinhas-titulo">
+          <h2 id="caixinhas-titulo">Caixinhas</h2>
+          <p class="mes-legenda">
+            Orçamento do dia a dia por pessoa — só gastos avulsos (não-recorrentes) do
+            mês atual. Reseta todo mês: não acumula sobra nem dívida. Qualquer um dos
+            dois pode ajustar o limite das duas caixinhas.
+          </p>
+          <p id="caixinhas-status" role="status" aria-live="polite"></p>
+          <div id="caixinhas-grid" class="caixinhas-grid"></div>
         </section>
       </div>
 
