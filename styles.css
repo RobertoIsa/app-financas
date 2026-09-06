@@ -792,6 +792,7 @@ section + section {
 .caixinhas-grid {
   display: flex;
   flex-direction: column;
+  align-items: stretch;
   gap: 1.25rem;
 }
 
@@ -799,6 +800,10 @@ section + section {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
+  /* Zera o "section + section { margin-top: 2rem }" global: os painéis são <section>
+     irmãos e o 2º herdava essa margem, desalinhando os cards no topo (lado a lado) e
+     inflando o espaço entre eles (empilhado). O espaçamento certo vem do gap da grid. */
+  margin: 0;
   background-color: var(--cor-card);
   border: 1px solid var(--cor-borda);
   border-radius: var(--raio);

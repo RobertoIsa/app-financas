@@ -247,6 +247,13 @@ por mês agora — só quando/se crescer muito; ver "Arquivamento").
 # Se não existir doc para o mês corrente, a UI usa o limite do mês mais recente definido
 # como default sugerido (não copia automaticamente — casal confirma/ajusta cada mês).
 
+# Observações gerais: texto livre por usuário (não documentado antes — descoberto ao
+# corrigir um PERMISSION_DENIED; a tela já existia no app sem estar registrada aqui).
+/observacoes/{uid}: {
+  texto: "...",                # conteúdo livre do textarea
+  atualizadoEm: 1723650000000
+}
+
 # Caixa: saldo acumulado real (não reseta por mês). Documento único + log de movimentos
 # para auditoria/desfazer. Nasce em 0. Só se move nos eventos listados em "Caixa (saldo
 # acumulado real)" — nunca por algo pendente/projetado.
@@ -468,6 +475,9 @@ Funciona para qualquer mês — passado, atual ou futuro (é o que dá a previsi
     "caixinhas": {
       ".write": "auth != null && root.child('membros').child(auth.uid).exists()"
     },
+    "observacoes": {
+      ".write": "auth != null && root.child('membros').child(auth.uid).exists()"
+    },
     "logs":        { ".write": "auth != null && root.child('membros').child(auth.uid).exists()" }
   }
 }
@@ -556,7 +566,8 @@ Funciona para qualquer mês — passado, atual ou futuro (é o que dá a previsi
 11. **Caixinhas** — painel por pessoa (Roberto/Esposa): limite do mês (editável pelo
     casal), lista dos gastos não-recorrentes do mês que consumiram saldo, e saldo
     restante. Reseta todo mês; calculado na hora, sem contador persistido.
-12. **Ajustes** — exportar backup, tema, gerenciar membros (admin).
+12. **Observações** — texto livre por usuário (`/observacoes/{uid}`), sem vínculo a mês.
+13. **Ajustes** — exportar backup, tema, gerenciar membros (admin).
 
 ---
 
