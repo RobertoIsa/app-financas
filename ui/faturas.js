@@ -1,6 +1,6 @@
 // ui/faturas.js
 import { lerLancamentosDaFatura, pagarFaturaEmLote } from "../db.js";
-import { mesDeData, dataHojeISO, somarMeses } from "../logic.js";
+import { mesDeData, dataHojeISO, somarMeses, formatCentavos } from "../logic.js";
 
 const NOMES_MES = [
   "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
@@ -100,7 +100,7 @@ export function initTelaFaturas({ cartoes, uid }) {
         li.style.justifyContent = "space-between";
         li.style.alignItems = "center";
         
-        const valorFormatado = `R$ ${(lanc.valorCentavos / 100).toFixed(2).replace('.', ',')}`;
+        const valorFormatado = formatCentavos(lanc.valorCentavos || 0);
         
         const statusBadge = estaPago 
           ? `<span style="background: #065f46; color: #34d399; padding: 2px 8px; border-radius: 4px; font-size: 12px; margin-left: 10px;">Pago</span>`
@@ -117,7 +117,7 @@ export function initTelaFaturas({ cartoes, uid }) {
       });
 
       // Exibe no resumo APENAS o somatório do que ainda falta pagar
-      totalValor.textContent = `R$ ${(totalCentavos / 100).toFixed(2).replace('.', ',')}`;
+      totalValor.textContent = formatCentavos(totalCentavos);
       secaoDetalhes.hidden = false;
       
       const avisoAntigo = document.getElementById("aviso-fatura-quitada");
