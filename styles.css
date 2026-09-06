@@ -910,6 +910,32 @@ section + section {
   font-size: 0.9375rem;
 }
 
+.caixinha-item-acoes {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.caixinha-toggle {
+  margin-left: auto;
+}
+
+/* Item marcado "não contar na caixinha": continua listado (pra permitir desmarcar),
+   só esmaecido e com o badge. Não some da lista. */
+.caixinha-item-fora {
+  opacity: 0.55;
+}
+
+.caixinha-badge-fora {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--cor-texto-suave);
+  border: 1px solid var(--cor-borda);
+  border-radius: 999px;
+  padding: 0.0625rem 0.5rem;
+}
+
 @media (min-width: 768px) {
   .caixinhas-grid {
     flex-direction: row;

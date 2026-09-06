@@ -199,6 +199,12 @@ por mês agora — só quando/se crescer muito; ver "Arquivamento").
   # --- recorrência (contas/receitas mensais) ---
   idRecorrencia: null,        # liga as ocorrências mensais de um item recorrente
 
+  # --- caixinhas ---
+  excluirDaCaixinha: false,   # true = NÃO conta no cálculo da caixinha, mesmo sendo despesa
+                              # não-recorrente do responsável. Toggle reversível, editável
+                              # na própria tela Caixinhas. Não afeta nenhuma outra tela
+                              # (fatura, Caixa, A Receber) — só o filtro da caixinha.
+
   # --- auditoria ---
   criadoPor: "{uid}",
   criadoEm: 1723650000000,
@@ -623,6 +629,10 @@ Funciona para qualquer mês — passado, atual ou futuro (é o que dá a previsi
   consumir o limite inteiro no mês da compra) e subtrai do limite. Escolha deliberada de
   cálculo na hora: evita replicar a complexidade de sincronismo que o Caixa exigiu, já que
   aqui não há necessidade de acumular histórico indefinidamente.
+- **Excluir lançamento da caixinha (sem apagar):** campo `excluirDaCaixinha` (reversível,
+  toggle) tira um gasto específico do cálculo da caixinha sem afetar nenhuma outra tela
+  (fatura, Caixa, A Receber continuam normais) — ex.: uma compra grande pra terceiro que
+  não deve pesar no orçamento do dia a dia. Editável direto na tela Caixinhas.
 
 ---
 

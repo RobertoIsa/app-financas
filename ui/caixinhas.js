@@ -17,6 +17,16 @@
 // real está espalhado nas faturas seguintes. Por desembolso, cada parcela consome a
 // caixinha só no mês em que sua fatura vence.
 //
+// "Não contar na caixinha" (toggle reversível — ver CLAUDE.md "Excluir lançamento da
+// caixinha sem apagar"): cada item da lista tem um botão que grava
+// `excluirDaCaixinha: true|false` no /lancamentos, via update simples (NÃO passa por
+// excluirLancamento — não é exclusão, o lançamento continua existindo e aparecendo em
+// Mês/Faturas/Caixa/Dashboard normalmente). O cálculo do "gasto no mês" ignora os itens
+// com `excluirDaCaixinha === true`.
+// Decisão (item 6 da tarefa): o item marcado CONTINUA listado aqui, com opacidade
+// reduzida + badge "Fora da caixinha", pra permitir desmarcar. É mais simples e correto
+// do que sumir com ele (não precisa de um segundo caminho pra "reexibir escondidos").
+//
 // 1ª versão: sempre o mês corrente, sem navegação entre meses (fica pra depois).
 
 import {
@@ -24,7 +34,8 @@ import {
   lerLancamentosPorMesDesembolso,
   lerLancamentosPorFaturaMes,
   lerCaixinhaLimite,
-  salvarCaixinhaLimite
+  salvarCaixinhaLimite,
+  atualizarLancamento
 } from "../db.js";
 import {
   formatCentavos,
@@ -202,6 +213,34 @@ export function initTelaCaixinhas({ categorias, membros, uid }) {
     }
   }
 
+  // Botão reversível "Não contar / Contar na caixinha". Grava só o campo
+  // excluirDaCaixinha (update simples via atualizarLancamento) e recarrega o painel.
+  function criarBotaoToggleCaixinha(lancamento) {
+    const fora = lancamento.excluirDaCaixinha === true;
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "botao-secundario botao-pequeno caixinha-toggle";
+    btn.textContent = fora ? "↩️ Contar na caixinha" : "🚫 Não contar na caixinha";
+    btn.setAttribute("aria-pressed", fora ? "true" : "false");
+    btn.addEventListener("click", async () => {
+      btn.disabled = true;
+      try {
+        await atualizarLancamento(lancamento.id, {
+          excluirDaCaixinha: !fora,
+          atualizadoEm: Date.now()
+        });
+        await carregar(); // re-renderiza tudo com o novo saldo/estado
+      } catch (erro) {
+        console.error("Erro ao alternar 'não contar na caixinha':", erro);
+        btn.disabled = false;
+        if (statusEl) {
+          statusEl.textContent = `Erro ao atualizar o lançamento: ${erro.message || erro.code || "desconhecido"}`;
+        }
+      }
+    });
+    return btn;
+  }
+
   function renderLista(listaEl, itens) {
     if (!listaEl) return;
     listaEl.innerHTML = "";
@@ -213,8 +252,9 @@ export function initTelaCaixinhas({ categorias, membros, uid }) {
       return;
     }
     itens.forEach((lancamento) => {
+      const fora = lancamento.excluirDaCaixinha === true;
       const li = document.createElement("li");
-      li.className = "lanc-item";
+      li.className = fora ? "lanc-item caixinha-item-fora" : "lanc-item";
 
       const linha = document.createElement("div");
       linha.className = "lanc-item-linha";
@@ -231,7 +271,17 @@ export function initTelaCaixinhas({ categorias, membros, uid }) {
       const dataFmt = formatarDataBR(lancamento.data);
       meta.textContent = `${obterNomeIconeCategoria(lancamento.categoriaId)}${dataFmt ? " · " + dataFmt : ""}`;
 
-      li.append(linha, meta);
+      const acoes = document.createElement("div");
+      acoes.className = "caixinha-item-acoes";
+      if (fora) {
+        const badge = document.createElement("span");
+        badge.className = "caixinha-badge-fora";
+        badge.textContent = "Fora da caixinha";
+        acoes.appendChild(badge);
+      }
+      acoes.appendChild(criarBotaoToggleCaixinha(lancamento));
+
+      li.append(linha, meta, acoes);
       listaEl.appendChild(li);
     });
   }
@@ -279,7 +329,9 @@ export function initTelaCaixinhas({ categorias, membros, uid }) {
         const temLimite = !!(limiteDoc && Number.isInteger(limiteDoc.limiteCentavos));
         const limiteCentavos = temLimite ? limiteDoc.limiteCentavos : 0;
 
-        const consumidores = lancamentosDoMes
+        // "candidatos" = todos os lançamentos elegíveis da pessoa no mês (ainda SEM olhar
+        // excluirDaCaixinha) — é o que a lista mostra, pra permitir desmarcar.
+        const candidatos = lancamentosDoMes
           .filter((l) =>
             l.tipo === "despesa" &&
             l.responsavel === pessoa.chave &&
@@ -293,6 +345,10 @@ export function initTelaCaixinhas({ categorias, membros, uid }) {
             if (dataA !== dataB) return dataB.localeCompare(dataA);
             return (b.criadoEm || 0) - (a.criadoEm || 0);
           });
+
+        // "consumidores" = os que realmente descontam do limite: exclui os marcados
+        // "não contar na caixinha" (excluirDaCaixinha === true).
+        const consumidores = candidatos.filter((l) => l.excluirDaCaixinha !== true);
 
         const gasto = consumidores.reduce((soma, l) => soma + (l.valorCentavos || 0), 0);
         const saldo = limiteCentavos - gasto;
@@ -317,7 +373,7 @@ export function initTelaCaixinhas({ categorias, membros, uid }) {
           ref.aviso.textContent = "Defina o limite deste mês.";
         }
 
-        renderLista(ref.lista, consumidores);
+        renderLista(ref.lista, candidatos);
       });
     } catch (erro) {
       console.error("Erro ao carregar as caixinhas:", erro);
