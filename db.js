@@ -571,6 +571,48 @@ export async function excluirLancamento(lancamento, uid) {
   // Comportamento padrão para exclusões normais
   await remove(ref(db, `lancamentos/${lancamento.id}`));
 
+  // Recebíveis órfãos (mesmo tipo de dado pendurado já visto antes com recebível órfão):
+  // se esta era uma "compra para terceiro" (paraTerceiro=true + idReembolso) e, DEPOIS de
+  // removê-la, não sobrou nenhuma parcela da mesma compra em /lancamentos, os itens que
+  // ela gerou em /receber não têm mais origem — apaga os que ainda estão "pendente".
+  //   - Os já "recebido" NÃO são tocados (nem a receita real que geraram): o dinheiro
+  //     entrou de verdade, é histórico (ver CLAUDE.md "Crédito a receber").
+  //   - Exclusão PARCIAL (ainda sobra ao menos uma parcela do idCompra): não mexe em
+  //     /receber. Limitação conhecida — o nº de recebíveis é editável e não casa 1-a-1
+  //     com as parcelas, então não dá pra decidir com segurança quais recebíveis
+  //     "sobram"; só limpamos quando a compra inteira deixou de existir.
+  // Best-effort, mesmo padrão dos estornos de caixa acima: a exclusão do lançamento já
+  // está commitada; se esta limpeza falhar, só loga (não relança) — não faz sentido
+  // barrar o usuário depois que a despesa já sumiu.
+  if (lancamento.paraTerceiro === true && lancamento.idReembolso) {
+    try {
+      let sobrouParcela = false;
+      if (lancamento.idCompra) {
+        const restantesSnap = await get(
+          query(ref(db, "lancamentos"), orderByChild("idCompra"), equalTo(lancamento.idCompra))
+        );
+        sobrouParcela = restantesSnap.exists();
+      }
+
+      if (!sobrouParcela) {
+        const recebiveisSnap = await get(
+          query(ref(db, "receber"), orderByChild("idReembolso"), equalTo(lancamento.idReembolso))
+        );
+        if (recebiveisSnap.exists()) {
+          const remocoes = {};
+          Object.entries(recebiveisSnap.val()).forEach(([id, rec]) => {
+            if (rec.status === "pendente") remocoes[`receber/${id}`] = null;
+          });
+          if (Object.keys(remocoes).length > 0) {
+            await update(ref(db), remocoes); // uma só operação atômica
+          }
+        }
+      }
+    } catch (erroOrfaos) {
+      console.error("Falha ao limpar recebíveis órfãos da compra para terceiro excluída:", erroOrfaos);
+    }
+  }
+
   if (precisaEstornarCaixa && lancamento.valorCentavos > 0) {
     // Best-effort, mesmo padrão do estorno de pagamento_cartao acima: a exclusão já
     // está commitada; se o estorno de caixa falhar, só loga — não desfaz a exclusão.
