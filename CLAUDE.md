@@ -645,6 +645,9 @@ adicionar comportamento novo a uma ação, checar se existe caminho paralelo equ
    por pessoa, painel calculado na hora (limite − soma de despesas não-recorrentes do
    responsável naquele mês), lista dos lançamentos que consumiram saldo.
 3. **Testar instalação PWA no iPhone** (esposa) — ainda não confirmado; Android já validado.
+4. **Confirmar Caixinhas na conta da esposa:** verificar que os dois painéis
+   (Roberto/Esposa) aparecem iguais e compartilhados ao logar com a conta dela — esperado
+   pelo desenho (painel vem de /membros, comum aos dois), mas ainda não testado na prática.
 4. **Gap conhecido, não bloqueante:** "Receber Tudo"/"Pagar Tudo" em grupos com recebível ou
    recorrência misturados a outros tipos pode não ajustar o Caixa para todos os itens —
    revisar se aparecer na prática.

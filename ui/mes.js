@@ -11,7 +11,8 @@ import {
   excluirLancamento,
   marcarLancamentoPago,
   marcarRecebivelRecebido,
-  desfazerRecebimento
+  desfazerRecebimento,
+  pagarFaturaEmLote
 } from "../db.js";
 import {
   formatCentavos,
@@ -357,7 +358,15 @@ export function initTelaMes({ categorias, uid }) {
     return item;
   }
 
-  function criarItemAgrupado(titulo, total, pago, pendente, tipo, itens) {
+  // `faturaCtx` (opcional) só é passado pelos grupos da seção "Faturas de Cartão":
+  // { cartaoId }. Quando presente, o botão "Pagar Tudo" NÃO usa o caminho genérico de
+  // marcar `pago` item a item — ele delega 100% pra db.js `pagarFaturaEmLote`, a MESMA
+  // função que a aba "Faturas" usa (que, além de baixar as compras, cria o lançamento
+  // de desembolso `pagamento_cartao` e movimenta o Caixa com origem "pagamento_fatura").
+  // Sem isso, "Pagar Tudo" aqui só marcava as compras como pagas e o Caixa nunca mexia
+  // — mesmo tipo de caminho paralelo que já causou bug antes (ver CLAUDE.md
+  // "Padrão recorrente identificado").
+  function criarItemAgrupado(titulo, total, pago, pendente, tipo, itens, faturaCtx) {
     const item = document.createElement("li");
     item.className = "lanc-item";
     item.style.flexDirection = "column";
@@ -421,23 +430,51 @@ export function initTelaMes({ categorias, uid }) {
         
         btnAcaoGlobal.addEventListener("click", async (e) => {
           e.stopPropagation();
+          const rotuloBotao = tipo === "receita" ? "Receber Tudo" : "Pagar Tudo";
           btnAcaoGlobal.disabled = true;
           btnAcaoGlobal.textContent = "...";
           try {
-            // marcarLancamentoPago (db.js) é o ÚNICO ponto de entrada pra isso — decide
-            // sozinho se precisa mexer no Caixa (ver comentário lá). Nunca chamar
-            // atualizarLancamento(id, {pago}) direto aqui de novo.
-            const resultados = await Promise.all(
-              pendentesParaBotao.map((p) => marcarLancamentoPago(p, true, uid))
-            );
+            let caixaFalhou = false;
+
+            if (faturaCtx) {
+              // Grupo da seção "Faturas de Cartão": paga a fatura inteira pelo MESMO
+              // caminho da aba "Faturas" — db.js `pagarFaturaEmLote` — que baixa as
+              // compras, cria o lançamento `pagamento_cartao` e movimenta o Caixa
+              // (origem "pagamento_fatura"). Nada de marcar `pago` compra a compra aqui.
+              // Todas as compras de um mesmo cartão num mesmo mês de desembolso
+              // compartilham o mesmo faturaMes; uso o das próprias compras (fallback: o
+              // mês selecionado) pra casar com o estorno de excluirLancamento, que
+              // reencontra as compras por faturaMes.
+              const ids = pendentesParaBotao.map((p) => p.id);
+              const totalCentavos = pendentesParaBotao.reduce((s, p) => s + (p.valorCentavos || 0), 0);
+              const faturaMes = pendentesParaBotao.find((p) => p.faturaMes)?.faturaMes || mesSelecionado;
+              const resultado = await pagarFaturaEmLote(
+                ids,
+                totalCentavos,
+                faturaMes,
+                dataHojeISO(),
+                "debito",
+                uid
+              );
+              caixaFalhou = !!(resultado && resultado.caixaAtualizado === false);
+            } else {
+              // marcarLancamentoPago (db.js) é o ÚNICO ponto de entrada pra isso — decide
+              // sozinho se precisa mexer no Caixa (ver comentário lá). Nunca chamar
+              // atualizarLancamento(id, {pago}) direto aqui de novo.
+              const resultados = await Promise.all(
+                pendentesParaBotao.map((p) => marcarLancamentoPago(p, true, uid))
+              );
+              caixaFalhou = resultados.some((r) => r && r.caixaAtualizado === false);
+            }
+
             await carregar();
-            if (resultados.some((r) => r && r.caixaAtualizado === false)) {
+            if (caixaFalhou) {
               alert("Atualizado! (Aviso: o saldo do Caixa pode não ter atualizado pra algum item — confira na aba Caixa.)");
             }
           } catch (erro) {
             alert("Erro ao atualizar: " + erro.message);
             btnAcaoGlobal.disabled = false;
-            btnAcaoGlobal.textContent = tipo === "receita" ? "Receber Tudo" : "Pagar Tudo";
+            btnAcaoGlobal.textContent = rotuloBotao;
           }
         });
         divPendente.appendChild(btnAcaoGlobal);
@@ -730,7 +767,7 @@ export function initTelaMes({ categorias, uid }) {
         if (Object.keys(gruposFaturas).length === 0) listaFaturas.innerHTML = "<li class='lanc-item'>Nenhuma fatura de cartão.</li>";
         for (const [cartaoId, dados] of Object.entries(gruposFaturas)) {
           const nomeCartao = cartoesPorId[cartaoId]?.nome || "Cartão Excluído";
-          listaFaturas.appendChild(criarItemAgrupado(`💳 Fatura: ${nomeCartao}`, dados.total, dados.pago, dados.pendente, "despesa", dados.itens));
+          listaFaturas.appendChild(criarItemAgrupado(`💳 Fatura: ${nomeCartao}`, dados.total, dados.pago, dados.pendente, "despesa", dados.itens, { cartaoId }));
         }
       }
 
