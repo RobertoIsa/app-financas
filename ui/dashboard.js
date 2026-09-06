@@ -54,12 +54,12 @@ const HORIZONTE_MAX = 12;
 const HORIZONTE_PADRAO = 6;
 
 export function initTelaDashboard({ categorias, membros, uid }) {
-  const botoesAtalhoHorizonte = document.querySelectorAll(".dash-horizonte-botao");
-  const inputHorizonteLivre = document.getElementById("dash-horizonte-input");
-  const btnAplicarHorizonte = document.getElementById("dash-horizonte-aplicar");
-  const erroHorizonteEl = document.getElementById("dash-horizonte-erro");
+  const selectHorizonte = document.getElementById("dash-horizonte-select");
   const statusEl = document.getElementById("dash-status");
   const faixaEl = document.getElementById("dash-faixa");
+  const totalEntradaEl = document.getElementById("dash-total-entrada");
+  const totalSaidaEl = document.getElementById("dash-total-saida");
+  const totalSaldoEl = document.getElementById("dash-total-saldo");
   const detalheMesLabel = document.getElementById("dash-detalhe-mes-label");
   const listaCategorias = document.getElementById("dash-lista-categorias");
   const listaPessoas = document.getElementById("dash-lista-pessoas");
@@ -282,6 +282,23 @@ export function initTelaDashboard({ categorias, membros, uid }) {
     });
   }
 
+  // Soma simples dos meses atualmente exibidos na faixa — diferente do saldo acumulado
+  // do Caixa (que é o total desde o início do uso); aqui é só entrada/saída/saldo dos
+  // meses do horizonte escolhido, recalculado toda vez que a faixa muda.
+  function renderizarTotalPeriodo(resumos) {
+    const totalEntradas = resumos.reduce((soma, r) => soma + r.totalEntradas, 0);
+    const totalSaidas = resumos.reduce((soma, r) => soma + r.totalSaidas, 0);
+    const saldo = totalEntradas - totalSaidas;
+
+    if (totalEntradaEl) totalEntradaEl.textContent = formatCentavos(totalEntradas);
+    if (totalSaidaEl) totalSaidaEl.textContent = formatCentavos(totalSaidas);
+    if (totalSaldoEl) {
+      totalSaldoEl.textContent = formatCentavos(saldo);
+      totalSaldoEl.classList.remove("lanc-receita", "lanc-despesa");
+      totalSaldoEl.classList.add(saldo < 0 ? "lanc-despesa" : "lanc-receita");
+    }
+  }
+
   function renderizarDetalhe(resumo) {
     if (detalheMesLabel) detalheMesLabel.textContent = formatarMesCompleto(resumo.mes);
 
@@ -359,6 +376,7 @@ export function initTelaDashboard({ categorias, membros, uid }) {
 
       if (statusEl) statusEl.textContent = "";
       renderizarFaixa(resumos);
+      renderizarTotalPeriodo(resumos);
 
       const resumoFocado = resumos.find((r) => r.mes === mesFocado) || resumos[0];
       if (resumoFocado) renderizarDetalhe(resumoFocado);
@@ -366,63 +384,22 @@ export function initTelaDashboard({ categorias, membros, uid }) {
       console.error(erro);
       if (statusEl) statusEl.textContent = `Erro ao carregar o dashboard: ${erro.message || erro.code || "erro desconhecido"}`;
       if (faixaEl) faixaEl.innerHTML = "";
+      if (totalEntradaEl) totalEntradaEl.textContent = "—";
+      if (totalSaidaEl) totalSaidaEl.textContent = "—";
+      if (totalSaldoEl) totalSaldoEl.textContent = "—";
     }
   }
 
-  // Reflete visualmente qual horizonte está ativo: destaca o atalho (3/6/12) que bate
-  // com o valor atual, ou o campo livre quando o valor ativo é um número "avulso".
-  function atualizarEstadoHorizonte() {
-    let algumAtalhoAtivo = false;
-    botoesAtalhoHorizonte.forEach((botao) => {
-      const ativo = Number(botao.dataset.meses) === horizonte;
-      botao.classList.toggle("dash-horizonte-ativo", ativo);
-      if (ativo) algumAtalhoAtivo = true;
-    });
-    if (inputHorizonteLivre) {
-      inputHorizonteLivre.value = horizonte;
-      inputHorizonteLivre.classList.toggle("dash-horizonte-ativo", !algumAtalhoAtivo);
-    }
-  }
-
-  function definirHorizonte(novoValor) {
-    if (erroHorizonteEl) erroHorizonteEl.textContent = "";
-    horizonte = novoValor;
-    atualizarEstadoHorizonte();
-    carregar();
-  }
-
-  function aplicarHorizonteLivre() {
-    if (!inputHorizonteLivre) return;
-    const valor = parseInt(inputHorizonteLivre.value, 10);
-    if (!Number.isInteger(valor) || valor < HORIZONTE_MIN || valor > HORIZONTE_MAX) {
-      if (erroHorizonteEl) {
-        erroHorizonteEl.textContent = `Digite um número entre ${HORIZONTE_MIN} e ${HORIZONTE_MAX}.`;
-      }
-      return;
-    }
-    definirHorizonte(valor);
-  }
-
-  botoesAtalhoHorizonte.forEach((botao) => {
-    botao.addEventListener("click", () => {
-      const valor = Number(botao.dataset.meses);
-      definirHorizonte(valor);
-    });
-  });
-
-  if (btnAplicarHorizonte) {
-    btnAplicarHorizonte.addEventListener("click", aplicarHorizonteLivre);
-  }
-  if (inputHorizonteLivre) {
-    inputHorizonteLivre.addEventListener("keydown", (evento) => {
-      if (evento.key === "Enter") {
-        evento.preventDefault();
-        aplicarHorizonteLivre();
-      }
+  if (selectHorizonte) {
+    selectHorizonte.value = String(horizonte);
+    selectHorizonte.addEventListener("change", () => {
+      const valor = parseInt(selectHorizonte.value, 10);
+      if (!Number.isInteger(valor) || valor < HORIZONTE_MIN || valor > HORIZONTE_MAX) return;
+      horizonte = valor;
+      carregar();
     });
   }
 
-  atualizarEstadoHorizonte();
   carregar();
 
   return {

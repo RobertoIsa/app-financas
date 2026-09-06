@@ -616,42 +616,11 @@ section + section {
 }
 
 .dash-horizonte-campo {
-  max-width: 20rem;
+  max-width: 14rem;
 }
 
-.dash-horizonte-atalhos {
-  display: flex;
-  gap: 0.5rem;
-}
-
-.dash-horizonte-botao {
-  flex: 1;
-}
-
-.dash-horizonte-botao.dash-horizonte-ativo {
-  border-color: var(--cor-primaria);
-  background-color: var(--cor-primaria);
-  color: #ffffff;
-}
-
-.dash-horizonte-livre {
-  display: flex;
-  gap: 0.5rem;
-  margin-top: 0.5rem;
-}
-
-#dash-horizonte-input {
-  flex: 1;
-  min-width: 0;
-}
-
-#dash-horizonte-input.dash-horizonte-ativo {
-  border-color: var(--cor-primaria);
-  border-width: 2px;
-}
-
-#dash-horizonte-aplicar {
-  flex: 0 0 auto;
+.dash-total-periodo {
+  margin-top: 1.25rem;
 }
 
 #dash-status {

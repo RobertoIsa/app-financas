@@ -556,24 +556,32 @@ Funciona para qualquer mês — passado, atual ou futuro (é o que dá a previsi
 parcelamento com ciclo de fatura, eixo de desembolso (`mesDesembolso`/`vencimento`),
 tela "Mês" com os dois eixos, crédito a receber (marcar/baixar/desfazer), recorrências
 (regra + projeção virtual, despesa e receita), Dashboard (faixa de meses, categoria,
-pessoa), PWA instalado e testado no Android. Regras de segurança publicadas cobrindo
-lancamentos/receber/recorrencias.
+pessoa), PWA instalado e testado no Android. **Caixa (saldo acumulado)** completo: nasce em
+R$0, movimenta em todos os eventos reais (despesa/receita imediata, pagamento de fatura,
+baixa de recebível, recorrência paga), com estorno na exclusão e ajuste na edição — testado
+nos caminhos individual e em lote ("Pagar Tudo"/"Receber Tudo"). Regras de segurança
+publicadas cobrindo lancamentos/receber/recorrencias/caixa.
 
 **Bugs reais encontrados e corrigidos ao longo do uso:** recorrência duplicando na
 materialização (corrigido com chave determinística + transação); recorrência nascia paga
 em vez de pendente; seção "Faturas de Cartão" da aba Mês buscava por competência em vez de
-`mesDesembolso` (parcelas futuras não apareciam); projeção virtual de receita recorrente
-não alimentava a exibição em meses futuros (só despesa).
+`mesDesembolso`; projeção virtual de receita recorrente não alimentava a exibição em meses
+futuros; botão "Receber" individual na aba Mês causava reload por event bubbling (faltava
+stopPropagation); PERMISSION_DENIED por regras desatualizadas no console (resolvido
+republicando); "Desfazer" de recebível na aba Mês e o botão "Pagar" de recorrência tinham
+caminhos paralelos que não movimentavam o Caixa — ambos corrigidos unificando num único
+ponto de entrada (`desfazerRecebimento`, `marcarLancamentoPago`) em vez de lógica duplicada.
+**Padrão recorrente identificado:** botões de atalho/lote ("Pagar Tudo", toggles genéricos)
+tendem a ficar desconectados de lógica nova adicionada só ao caminho individual — ao
+adicionar comportamento novo a uma ação, checar se existe caminho paralelo equivalente.
 
-**Próximos passos (nesta ordem):**
-1. **Investigar e corrigir erro PERMISSION_DENIED** ao dar baixa em recebível na aba
-   "A Receber" (em investigação — causa raiz ainda não identificada).
-2. **Caixa (saldo acumulado):** nó `/caixa` + regras já definidas neste documento —
-   **republicar as regras no console antes de codar**. Implementar: atualização atômica do
-   saldo em cada evento que move dinheiro de fato (ver lista em "Caixa (saldo acumulado
-   real)"), tela de extrato, e ligar aos fluxos já existentes (lançamento imediato,
-   pagamento de fatura, baixa de recebível, recorrência paga) sem duplicar a lógica.
-3. **Testar instalação PWA no iPhone** (esposa) — ainda não confirmado; Android já validado.
+**Próximos passos:**
+1. **Testar instalação PWA no iPhone** (esposa) — ainda não confirmado; Android já validado.
+2. **Gap conhecido, não bloqueante:** "Receber Tudo"/"Pagar Tudo" em grupos com recebível ou
+   recorrência misturados a outros tipos pode não ajustar o Caixa para todos os itens —
+   revisar se aparecer na prática.
 
 **Ajustes finos anotados:** rótulo "Valor da parcela" no crédito parcelado; melhorar o
-campo de data (fácil esquecer de trocar o dia).
+campo de data (fácil esquecer de trocar o dia); variável CSS `--texto-secundario` usada em
+ui/mes.js não existe em styles.css (a real é `--cor-texto-suave`) — bug pré-existente, não
+corrigido ainda.

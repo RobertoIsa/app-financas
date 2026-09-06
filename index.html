@@ -161,23 +161,41 @@
           </p>
 
           <div class="campo dash-horizonte-campo">
-            <span id="dash-horizonte-label">Meses à frente</span>
-            <div class="dash-horizonte-atalhos" role="group" aria-labelledby="dash-horizonte-label">
-              <button type="button" class="botao-secundario dash-horizonte-botao" data-meses="3">3</button>
-              <button type="button" class="botao-secundario dash-horizonte-botao" data-meses="6">6</button>
-              <button type="button" class="botao-secundario dash-horizonte-botao" data-meses="12">12</button>
-            </div>
-            <div class="dash-horizonte-livre">
-              <label for="dash-horizonte-input" class="sr-only">Outro número de meses (1 a 12)</label>
-              <input type="number" id="dash-horizonte-input" min="1" max="12" step="1" inputmode="numeric" placeholder="Outro (1-12)">
-              <button type="button" id="dash-horizonte-aplicar" class="botao-secundario">Aplicar</button>
-            </div>
-            <p id="dash-horizonte-erro" class="erro" role="alert" aria-live="assertive"></p>
+            <label for="dash-horizonte-select">Meses à frente</label>
+            <select id="dash-horizonte-select">
+              <option value="1">1 mês</option>
+              <option value="2">2 meses</option>
+              <option value="3">3 meses</option>
+              <option value="4">4 meses</option>
+              <option value="5">5 meses</option>
+              <option value="6" selected>6 meses</option>
+              <option value="7">7 meses</option>
+              <option value="8">8 meses</option>
+              <option value="9">9 meses</option>
+              <option value="10">10 meses</option>
+              <option value="11">11 meses</option>
+              <option value="12">12 meses</option>
+            </select>
           </div>
 
           <p id="dash-status" role="status" aria-live="polite"></p>
 
           <ul id="dash-faixa" class="dash-faixa"></ul>
+
+          <div class="mes-resumo dash-total-periodo">
+            <div class="mes-resumo-item">
+              <span class="mes-resumo-rotulo">Entrada do período</span>
+              <span id="dash-total-entrada" class="mes-resumo-valor">—</span>
+            </div>
+            <div class="mes-resumo-item">
+              <span class="mes-resumo-rotulo">Saída do período</span>
+              <span id="dash-total-saida" class="mes-resumo-valor">—</span>
+            </div>
+            <div class="mes-resumo-item destaque">
+              <span class="mes-resumo-rotulo">Saldo do período</span>
+              <span id="dash-total-saldo" class="mes-resumo-valor">—</span>
+            </div>
+          </div>
         </section>
 
         <section aria-labelledby="dash-detalhe-titulo">
