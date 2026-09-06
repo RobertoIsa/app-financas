@@ -6,17 +6,34 @@
 // de /lancamentos (mesma abordagem da tela "Mês"), evitando o sincronismo frágil que o
 // Caixa exigiu. Só o LIMITE fica gravado em /caixinhas/{pessoa}/{mes}.
 //
-// Regra do que consome a caixinha de uma pessoa, no MÊS ATUAL (eixo competência/`mes`):
-//   tipo = "despesa"  &&  responsavel = a pessoa  &&  idRecorrencia ausente/null
-// (recorrências têm limite próprio, fora da caixinha). Também ignoramos o lançamento
-// de sistema "pagamento_cartao" (a baixa da fatura) — não é um gasto solto do dia a
-// dia, e as compras de crédito já entram uma a uma pela competência; o mesmo filtro é
-// usado no Dashboard.
+// Regra do que consome a caixinha de uma pessoa, no MÊS ATUAL — eixo DESEMBOLSO
+// (`mesDesembolso`), NÃO competência (ver CLAUDE.md "Caixinhas", corrigido):
+//   mesDesembolso = mês atual  &&  tipo = "despesa"  &&  responsavel = a pessoa  &&
+//   idRecorrencia ausente/null  &&  categoria != pagamento_cartao/pagamento_fatura
+// (recorrências têm limite próprio, fora da caixinha; o "pagamento_cartao" é a baixa da
+// fatura, não um gasto solto). Por que desembolso e não competência: todas as parcelas
+// de uma compra parcelada têm o MESMO `mes` (a data da compra), então competência fazia
+// a compra INTEIRA descontar do limite do mês da compra de uma vez — quando o impacto
+// real está espalhado nas faturas seguintes. Por desembolso, cada parcela consome a
+// caixinha só no mês em que sua fatura vence.
 //
 // 1ª versão: sempre o mês corrente, sem navegação entre meses (fica pra depois).
 
-import { lerLancamentosDoMes, lerCaixinhaLimite, salvarCaixinhaLimite } from "../db.js";
-import { formatCentavos, parseValorParaCentavos, dataHojeISO, mesDeData } from "../logic.js";
+import {
+  lerLancamentosDoMes,
+  lerLancamentosPorMesDesembolso,
+  lerLancamentosPorFaturaMes,
+  lerCaixinhaLimite,
+  salvarCaixinhaLimite
+} from "../db.js";
+import {
+  formatCentavos,
+  parseValorParaCentavos,
+  dataHojeISO,
+  mesDeData,
+  somarMeses,
+  obterMesDesembolso
+} from "../logic.js";
 
 // Chaves estáveis de /membros (ver CLAUDE.md "Atribuição por pessoa"). O nome exibido
 // vem de /membros quando disponível; senão cai neste rótulo.
@@ -224,11 +241,35 @@ export function initTelaCaixinhas({ categorias, membros, uid }) {
     if (statusEl) statusEl.textContent = "Carregando...";
 
     try {
-      const [lancamentos, ...limites] = await Promise.all([
+      // Eixo DESEMBOLSO. Mesma estratégia da aba "Mês" pra tolerar lançamentos antigos
+      // sem `mesDesembolso` gravado: junta 3 fontes por id e resolve cada um com
+      // obterMesDesembolso (fallback: faturaMes || mes).
+      //  - lerLancamentosPorMesDesembolso: registros com o campo já preenchido;
+      //  - lerLancamentosDoMes (competência): pega os não-crédito antigos, onde
+      //    desembolso == mes (o obterMesDesembolso confirma);
+      //  - lerLancamentosPorFaturaMes (mês atual e o anterior): pega parcelas de crédito
+      //    antigas sem `mesDesembolso` — o desembolso só pode ser o próprio faturaMes ou
+      //    o mês seguinte, então essas duas consultas cobrem todo candidato.
+      const [porDesembolso, porCompetencia, faturaAtual, faturaAnterior, ...limites] = await Promise.all([
+        lerLancamentosPorMesDesembolso(mesAtual),
         lerLancamentosDoMes(mesAtual),
+        lerLancamentosPorFaturaMes(mesAtual),
+        lerLancamentosPorFaturaMes(somarMeses(mesAtual, -1)),
         ...pessoas.map((p) => lerCaixinhaLimite(p.chave, mesAtual))
       ]);
       if (statusEl) statusEl.textContent = "";
+
+      const porId = new Map();
+      [porDesembolso, porCompetencia, faturaAtual, faturaAnterior].forEach((lista) => {
+        lista.forEach((l) => {
+          if (l && l.id && !porId.has(l.id)) porId.set(l.id, l);
+        });
+      });
+      // Cada parcela é um /lancamentos próprio com seu mesDesembolso — este filtro deixa
+      // passar só a parcela cujo vencimento cai no mês corrente, nunca a compra inteira.
+      const lancamentosDoMes = [...porId.values()].filter(
+        (l) => obterMesDesembolso(l) === mesAtual
+      );
 
       pessoas.forEach((pessoa, indice) => {
         const ref = refs[pessoa.chave];
@@ -238,7 +279,7 @@ export function initTelaCaixinhas({ categorias, membros, uid }) {
         const temLimite = !!(limiteDoc && Number.isInteger(limiteDoc.limiteCentavos));
         const limiteCentavos = temLimite ? limiteDoc.limiteCentavos : 0;
 
-        const consumidores = lancamentos
+        const consumidores = lancamentosDoMes
           .filter((l) =>
             l.tipo === "despesa" &&
             l.responsavel === pessoa.chave &&

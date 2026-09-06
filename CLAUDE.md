@@ -54,10 +54,13 @@ exigiu. Painel de cada caixinha mostra: **limite do mês** (definido pelo casal)
 lançamentos daquele mês.
 
 - **Entra no cálculo da caixinha de uma pessoa:** despesas dela (`responsavel` = a pessoa)
-  no mês, que sejam **não-recorrentes** (`idRecorrencia` ausente) — os gastos soltos do dia
-  a dia (Restaurantes, Lazer, uma compra qualquer). Usa o eixo **gasto/competência**
-  (campo `mes`), não desembolso — é sobre "quanto você decidiu gastar este mês", não sobre
-  quando a fatura vence.
+  que sejam **não-recorrentes** (`idRecorrencia` ausente) — os gastos soltos do dia a dia
+  (Restaurantes, Lazer, uma compra qualquer). Usa o eixo **desembolso** (`mesDesembolso`),
+  **não** competência (`mes`). **Motivo da correção:** todas as parcelas de uma compra
+  parcelada compartilham o mesmo `mes` (a data da compra); usar competência faria a compra
+  inteira consumir o limite do mês da compra de uma vez, mesmo o impacto real estando
+  espalhado pelas faturas seguintes. Com desembolso, cada parcela conta no mês em que
+  realmente vai pesar no bolso — consistente com o eixo principal do resto do app.
 - **Não entra:** despesas com `idRecorrencia` preenchido (essas têm limite próprio, fora da
   caixinha), receitas, e — por decisão de que "casal" deixou de existir — nada fica "de
   fora" por ambiguidade de responsável.
@@ -615,10 +618,11 @@ Funciona para qualquer mês — passado, atual ou futuro (é o que dá a previsi
   por algo pendente/projetado. Separado do "Saldo do Mês"/"Saldo Projetado" existentes.
 - **Caixinhas:** 2 fixas (Roberto/Esposa), limite mensal editável pelo casal, **resetam
   todo mês** (não acumulam). Saldo **calculado na hora** (não é um contador com
-  movimentos como o Caixa) — soma as despesas não-recorrentes do mês daquela pessoa
-  (`responsavel` = pessoa, `idRecorrencia` ausente, eixo competência/`mes`) e subtrai do
-  limite. Escolha deliberada: evita replicar a complexidade de sincronismo que o Caixa
-  exigiu, já que aqui não há necessidade de acumular histórico indefinidamente.
+  movimentos como o Caixa) — soma as despesas não-recorrentes do responsável usando o eixo
+  **desembolso** (`mesDesembolso`, **corrigido** de competência: compra parcelada não pode
+  consumir o limite inteiro no mês da compra) e subtrai do limite. Escolha deliberada de
+  cálculo na hora: evita replicar a complexidade de sincronismo que o Caixa exigiu, já que
+  aqui não há necessidade de acumular histórico indefinidamente.
 
 ---
 
