@@ -216,20 +216,47 @@
           <button type="button" id="mesnav-hoje" class="botao-secundario botao-pequeno">Ir para hoje</button>
         </section>
 
-        <section aria-labelledby="mes-balanco-titulo">
-          <h2 id="mes-balanco-titulo">Balanço do Mês (Caixa)</h2>
+        <section aria-labelledby="mes-proj-titulo">
+          <h2 id="mes-proj-titulo">Projeção do Mês</h2>
+          <p class="mes-legenda">
+            O que está previsto para o mês, olhando pra frente: tudo que se espera
+            receber e as despesas que ainda faltam pagar.
+          </p>
           <div class="mes-resumo">
             <div class="mes-resumo-item">
-              <span class="mes-resumo-rotulo">Total Receitas</span>
-              <span id="mes-balanco-receitas" class="mes-resumo-valor">—</span>
+              <span class="mes-resumo-rotulo">Total de Receitas</span>
+              <span id="mes-proj-receitas" class="mes-resumo-valor">—</span>
             </div>
             <div class="mes-resumo-item destaque">
-              <span class="mes-resumo-rotulo">Total Desembolsos</span>
-              <span id="mes-balanco-despesas" class="mes-resumo-valor">—</span>
+              <span class="mes-resumo-rotulo">Despesas a Pagar</span>
+              <span id="mes-proj-despesas-pagar" class="mes-resumo-valor">—</span>
             </div>
             <div class="mes-resumo-item">
-              <span class="mes-resumo-rotulo">Saldo Final</span>
-              <span id="mes-balanco-saldo" class="mes-resumo-valor">—</span>
+              <span class="mes-resumo-rotulo">Saldo do Mês</span>
+              <span id="mes-proj-saldo" class="mes-resumo-valor">—</span>
+            </div>
+          </div>
+        </section>
+
+        <section aria-labelledby="mes-caixareal-titulo">
+          <h2 id="mes-caixareal-titulo">Caixa Real</h2>
+          <p class="mes-legenda">
+            Dinheiro que já saiu/está na conta de verdade: o saldo acumulado da aba
+            Caixa, descontado dos gastos do dia a dia (à vista, não-recorrentes) deste
+            mês, da casa toda.
+          </p>
+          <div class="mes-resumo">
+            <div class="mes-resumo-item">
+              <span class="mes-resumo-rotulo">Total Caixa</span>
+              <span id="mes-caixa-total" class="mes-resumo-valor">—</span>
+            </div>
+            <div class="mes-resumo-item destaque">
+              <span class="mes-resumo-rotulo">Gastos do Dia a Dia</span>
+              <span id="mes-caixa-gastos-dia-dia" class="mes-resumo-valor">—</span>
+            </div>
+            <div class="mes-resumo-item">
+              <span class="mes-resumo-rotulo">Saldo Caixa</span>
+              <span id="mes-caixa-saldo" class="mes-resumo-valor">—</span>
             </div>
           </div>
         </section>

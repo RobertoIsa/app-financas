@@ -441,6 +441,28 @@ Para um mês M, o app calcula e mostra:
 - Visão secundária (eixo gasto/orçamento): Σ por `mes`, por categoria, por pessoa.
 Funciona para qualquer mês — passado, atual ou futuro (é o que dá a previsibilidade).
 
+### Resumo da aba "Mês" — dois quadros (revisão)
+O topo da aba Mês (antes "Balanço do Mês (Caixa)") mostra **dois quadros distintos**,
+cada um respondendo uma pergunta diferente:
+
+**Quadro 1 — Projeção do mês** (visão de compromissos, olhando pra frente):
+- **Total de Receitas:** tudo esperado no mês M — receitas já confirmadas/recebidas +
+  recebíveis de `/receber` pendentes com `mesEsperado = M` + recorrências de receita
+  (materializadas ou virtuais) de M.
+- **Despesas a Pagar:** despesas recorrentes **ainda pendentes** (`pago:false`,
+  `mesDesembolso = M`) **+** despesas não-recorrentes **no crédito** cuja fatura ainda não
+  foi paga e vence em M (`pago:false`, `mesDesembolso = M`, `meioPagamento = credito`,
+  sem `idRecorrencia`). NÃO inclui gastos imediatos não-recorrentes (esses já saíram de
+  verdade e são domínio do Quadro 2).
+- **Saldo do Mês** = Total de Receitas − Despesas a Pagar.
+
+**Quadro 2 — Caixa real** (visão de dinheiro que já saiu de fato):
+- **Total Caixa:** saldo atual acumulado — mesmo valor da aba Caixa (`/caixa/saldo`).
+- **Gastos do Dia a Dia:** Σ despesas imediatas não-recorrentes de M (dinheiro/débito/
+  pix/transferência — nunca crédito), excluindo `pagamento_cartao`/`pagamento_fatura`.
+  Mesmo filtro usado nas Caixinhas, mas somando as DUAS pessoas (visão da casa).
+- **Saldo Caixa** = Total Caixa − Gastos do Dia a Dia.
+
 ---
 
 ## Controle de concorrência

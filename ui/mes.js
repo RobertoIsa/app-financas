@@ -7,6 +7,7 @@ import {
   lerRecebiveisPorMesEsperado,
   lerRecorrencias,
   lerCartoes,
+  lerSaldoCaixa,
   materializarOcorrencia,
   excluirLancamento,
   marcarLancamentoPago,
@@ -42,9 +43,15 @@ export function initTelaMes({ categorias, uid }) {
   const btnProximo = document.getElementById("mesnav-proximo");
   const btnHoje = document.getElementById("mesnav-hoje");
 
-  const elTotalReceitas = document.getElementById("mes-balanco-receitas");
-  const elTotalDespesas = document.getElementById("mes-balanco-despesas");
-  const elSaldo = document.getElementById("mes-balanco-saldo");
+  // Quadro 1 — "Projeção do Mês" (ver CLAUDE.md "Resumo da aba Mês — dois quadros").
+  const elProjReceitas = document.getElementById("mes-proj-receitas");
+  const elProjDespesasAPagar = document.getElementById("mes-proj-despesas-pagar");
+  const elProjSaldo = document.getElementById("mes-proj-saldo");
+
+  // Quadro 2 — "Caixa Real".
+  const elCaixaTotal = document.getElementById("mes-caixa-total");
+  const elCaixaGastosDiaDia = document.getElementById("mes-caixa-gastos-dia-dia");
+  const elCaixaSaldo = document.getElementById("mes-caixa-saldo");
 
   const listaReceitas = document.getElementById("lista-mes-receitas");
   const listaFaturas = document.getElementById("lista-mes-faturas");
@@ -592,18 +599,22 @@ export function initTelaMes({ categorias, uid }) {
       if (listaFaturas) listaFaturas.innerHTML = "<li>Carregando...</li>";
       if (listaDespesasVista) listaDespesasVista.innerHTML = "<li>Carregando...</li>";
 
-      if (elTotalReceitas) elTotalReceitas.textContent = "—";
-      if (elTotalDespesas) elTotalDespesas.textContent = "—";
-      if (elSaldo) elSaldo.textContent = "—";
+      if (elProjReceitas) elProjReceitas.textContent = "—";
+      if (elProjDespesasAPagar) elProjDespesasAPagar.textContent = "—";
+      if (elProjSaldo) elProjSaldo.textContent = "—";
+      if (elCaixaTotal) elCaixaTotal.textContent = "—";
+      if (elCaixaGastosDiaDia) elCaixaGastosDiaDia.textContent = "—";
+      if (elCaixaSaldo) elCaixaSaldo.textContent = "—";
 
-      let [lancamentosCompetencia, lancamentosDesembolso, recebiveisDoMes, cartoes, recorrencias] = await Promise.all([
+      let [lancamentosCompetencia, lancamentosDesembolso, recebiveisDoMes, cartoes, recorrencias, saldoCaixa] = await Promise.all([
         lerLancamentosDoMes(mesSelecionado),
         lerLancamentosPorMesDesembolso(mesSelecionado),
         lerRecebiveisPorMesEsperado(mesSelecionado),
         lerCartoes(),
-        lerRecorrencias()
+        lerRecorrencias(),
+        lerSaldoCaixa()
       ]);
-      if (meuPedido !== pedidoAtual) return; 
+      if (meuPedido !== pedidoAtual) return;
 
       const cartoesPorId = Object.fromEntries(cartoes.map((c) => [c.id, c]));
       const mesAtual = mesDeData(dataHojeISO());
@@ -735,16 +746,82 @@ export function initTelaMes({ categorias, uid }) {
         addVista(r.categoriaId, r.valorCentavos, false, r);
       });
 
-      const totalDesembolsos = totalGeralFaturas + totalGeralVista;
-      const saldoFinal = totalGeralReceitas - totalDesembolsos;
+      // ---- Quadro 1: "Projeção do Mês" (ver CLAUDE.md "Resumo da aba Mês — dois
+      // quadros"). Total de Receitas é exatamente o totalGeralReceitas somado acima:
+      // receitas confirmadas do mês (lancamentosDesembolso) + recebíveis pendentes
+      // (mesEsperado=M) + recorrências de receita, materializadas (já estão em
+      // lancamentosDesembolso) ou virtuais (recorrentesVirtuaisDesembolso/Competencia,
+      // só populadas pra meses futuros) — nada novo a calcular aqui.
+      const todosPorDesembolsoDoMes = [...candidatosDesembolsoPorId.values()].filter(
+        (l) => obterMesDesembolso(l) === mesSelecionado
+      );
 
-      if (elTotalReceitas) elTotalReceitas.textContent = formatCentavos(totalGeralReceitas);
-      if (elTotalDespesas) elTotalDespesas.textContent = formatCentavos(totalDesembolsos);
-      if (elSaldo) {
-        elSaldo.textContent = formatCentavos(saldoFinal);
-        elSaldo.className = "mes-resumo-valor"; 
-        if (saldoFinal < 0) elSaldo.classList.add("lanc-despesa");
-        if (saldoFinal > 0) elSaldo.classList.add("lanc-receita");
+      // Despesas a Pagar = despesas RECORRENTES pendentes (mesDesembolso=M, pago=false,
+      // qualquer meio de pagamento) + despesas NÃO-recorrentes NO CRÉDITO pendentes
+      // (mesDesembolso=M, pago=false). Não inclui despesa imediata não-recorrente —
+      // essa é "dinheiro que já saiu", domínio do Quadro 2 (Caixa Real).
+      const despesasRecorrentesPendentes = todosPorDesembolsoDoMes.filter(
+        (l) => l.tipo === "despesa" && l.idRecorrencia && l.pago === false
+      );
+      // Ocorrências de recorrência ainda NÃO materializadas (só existem pra meses
+      // futuros — recorrentesVirtuaisDesembolso fica vazio pra mês atual/passado, pois
+      // aí a materialização acima já rodou): por definição ainda não foram pagas, contam
+      // como "a pagar" igual às materializadas pendentes. Dedupe defensivo por
+      // idRecorrencia contra o conjunto real: uma regra visitada/materializada numa
+      // competência passada, cujo desembolso cai neste mês futuro, não deve contar 2×
+      // (uma vez como real, outra como projeção virtual da mesma regra).
+      const idsRecorrenciaJaMaterializados = new Set(
+        todosPorDesembolsoDoMes.filter((l) => l.idRecorrencia).map((l) => l.idRecorrencia)
+      );
+      const despesasRecorrentesPendentesVirtuais = recorrentesVirtuaisDesembolso.filter(
+        (r) => r.tipo === "despesa" && !idsRecorrenciaJaMaterializados.has(r.idRecorrencia)
+      );
+      const despesasCreditoNaoRecorrentesPendentes = despesasCreditoDoMes.filter(
+        (l) => !l.idRecorrencia && l.pago === false
+      );
+
+      const totalDespesasAPagar =
+        despesasRecorrentesPendentes.reduce((s, l) => s + l.valorCentavos, 0) +
+        despesasRecorrentesPendentesVirtuais.reduce((s, r) => s + r.valorCentavos, 0) +
+        despesasCreditoNaoRecorrentesPendentes.reduce((s, l) => s + l.valorCentavos, 0);
+
+      const saldoDoMes = totalGeralReceitas - totalDespesasAPagar;
+
+      if (elProjReceitas) elProjReceitas.textContent = formatCentavos(totalGeralReceitas);
+      if (elProjDespesasAPagar) elProjDespesasAPagar.textContent = formatCentavos(totalDespesasAPagar);
+      if (elProjSaldo) {
+        elProjSaldo.textContent = formatCentavos(saldoDoMes);
+        elProjSaldo.className = "mes-resumo-valor";
+        if (saldoDoMes < 0) elProjSaldo.classList.add("lanc-despesa");
+        if (saldoDoMes > 0) elProjSaldo.classList.add("lanc-receita");
+      }
+
+      // ---- Quadro 2: "Caixa Real" ----
+      // Total Caixa: mesmo saldo acumulado exibido na aba Caixa (/caixa/saldo).
+      // Gastos do Dia a Dia: despesas IMEDIATAS (não-crédito) e NÃO-recorrentes do mês,
+      // das DUAS pessoas somadas (visão da casa, sem filtrar por responsável) — mesmo
+      // filtro usado em ui/caixinhas.js pro "gasto no mês" de cada pessoa, generalizado
+      // aqui só tirando a condição de responsavel. Lê de lancamentosCompetencia: pra
+      // meio não-crédito, mesDesembolso === mes sempre, então competência e desembolso
+      // são o mesmo mês (ver CLAUDE.md "Os dois eixos de tempo").
+      const gastosDiaDia = lancamentosCompetencia.filter((l) =>
+        l.tipo === "despesa" &&
+        l.meioPagamento !== "credito" &&
+        (l.idRecorrencia === undefined || l.idRecorrencia === null) &&
+        l.categoriaId !== "pagamento_cartao" &&
+        l.categoriaId !== "pagamento_fatura"
+      );
+      const totalGastosDiaDia = gastosDiaDia.reduce((s, l) => s + (l.valorCentavos || 0), 0);
+      const totalCaixa = (saldoCaixa && saldoCaixa.valorCentavos) || 0;
+      const saldoCaixaMes = totalCaixa - totalGastosDiaDia;
+
+      if (elCaixaTotal) elCaixaTotal.textContent = formatCentavos(totalCaixa);
+      if (elCaixaGastosDiaDia) elCaixaGastosDiaDia.textContent = formatCentavos(totalGastosDiaDia);
+      if (elCaixaSaldo) {
+        elCaixaSaldo.textContent = formatCentavos(saldoCaixaMes);
+        elCaixaSaldo.className = "mes-resumo-valor";
+        if (saldoCaixaMes < 0) elCaixaSaldo.classList.add("lanc-despesa");
+        if (saldoCaixaMes > 0) elCaixaSaldo.classList.add("lanc-receita");
       }
 
       if (listaReceitas) {
