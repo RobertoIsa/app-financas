@@ -901,6 +901,24 @@ section + section {
   gap: 0.5rem;
 }
 
+/* Mobile-first (<768px): a lista fica recolhida por padrão e some — só o botão
+   "Ver lançamentos (N)" aparece — pra não empurrar o painel seguinte pra longe quando
+   há muitos lançamentos. Aberta, ganha altura máxima com rolagem própria em vez de
+   esticar a página. O @media (min-width: 768px) abaixo desfaz os dois no desktop, onde
+   os painéis ficam lado a lado e a lista já cabe sem esse limite. */
+.caixinha-lista-toggle {
+  align-self: flex-start;
+}
+
+.caixinha-lista.caixinha-lista-fechada {
+  display: none;
+}
+
+.caixinha-lista:not(.caixinha-lista-fechada) {
+  max-height: 320px;
+  overflow-y: auto;
+}
+
 .caixinha-lista .lanc-item {
   background-color: var(--cor-fundo);
 }
@@ -945,6 +963,23 @@ section + section {
   .caixinha-painel {
     flex: 1;
     min-width: 0;
+  }
+
+  /* Desfaz o recolhimento mobile: no desktop a lista fica sempre visível por inteiro,
+     sem limite de altura, e o botão de expandir/ocultar não aparece — mesma
+     especificidade das regras base (classe + classe) pra garantir que estas, que vêm
+     depois no arquivo, vençam a cascata. */
+  .caixinha-lista-toggle {
+    display: none;
+  }
+
+  .caixinha-lista.caixinha-lista-fechada {
+    display: flex;
+  }
+
+  .caixinha-lista:not(.caixinha-lista-fechada) {
+    max-height: none;
+    overflow-y: visible;
   }
 }
 

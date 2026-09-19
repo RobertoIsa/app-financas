@@ -71,6 +71,19 @@ function formatarDataBR(dataISO) {
   return `${partes[2]}/${partes[1]}/${partes[0]}`;
 }
 
+// Sincroniza o texto/estado a11y do botão "Ver/Ocultar lançamentos" com a classe de
+// colapso da lista. É só um TOGGLE de classe — o próprio CSS decide o que ela faz
+// visualmente: recolhe + limita altura só no mobile (<768px); no desktop (≥768px) a
+// classe fica inerte e a lista continua sempre visível por inteiro, lado a lado como já
+// era (ver styles.css). N vem de btn.dataset.count, atualizado em renderLista.
+function sincronizarBotaoToggleLista(btn, lista) {
+  if (!btn || !lista) return;
+  const fechada = lista.classList.contains("caixinha-lista-fechada");
+  const n = Number(btn.dataset.count || 0);
+  btn.textContent = fechada ? `Ver lançamentos (${n})` : "Ocultar lançamentos";
+  btn.setAttribute("aria-expanded", fechada ? "false" : "true");
+}
+
 export function initTelaCaixinhas({ categorias, membros, uid }) {
   const grid = document.getElementById("caixinhas-grid");
   const statusEl = document.getElementById("caixinhas-status");
@@ -162,10 +175,27 @@ export function initTelaCaixinhas({ categorias, membros, uid }) {
     const listaTitulo = document.createElement("h4");
     listaTitulo.className = "caixinha-lista-titulo";
     listaTitulo.textContent = "Lançamentos que consumiram";
-    const lista = document.createElement("ul");
-    lista.className = "caixinha-lista";
 
-    painel.append(titulo, numeros, aviso, form, listaTitulo, lista);
+    // Botão "Ver/Ocultar lançamentos" — só tem efeito visual no mobile (ver
+    // .caixinha-lista-toggle/.caixinha-lista-fechada em styles.css); no desktop fica
+    // oculto pelo CSS e a lista já aparece sempre aberta, sem essa limitação.
+    const btnToggleLista = document.createElement("button");
+    btnToggleLista.type = "button";
+    btnToggleLista.className = "botao-secundario botao-pequeno caixinha-lista-toggle";
+    btnToggleLista.dataset.count = "0";
+
+    const lista = document.createElement("ul");
+    lista.className = "caixinha-lista caixinha-lista-fechada"; // recolhida por padrão (mobile)
+    lista.id = `caixinha-lista-${pessoa.chave}`;
+    btnToggleLista.setAttribute("aria-controls", lista.id);
+    sincronizarBotaoToggleLista(btnToggleLista, lista);
+
+    btnToggleLista.addEventListener("click", () => {
+      lista.classList.toggle("caixinha-lista-fechada");
+      sincronizarBotaoToggleLista(btnToggleLista, lista);
+    });
+
+    painel.append(titulo, numeros, aviso, form, listaTitulo, btnToggleLista, lista);
     grid.appendChild(painel);
 
     form.addEventListener("submit", (evento) => {
@@ -181,7 +211,8 @@ export function initTelaCaixinhas({ categorias, membros, uid }) {
       aviso,
       input,
       erro,
-      lista
+      lista,
+      btnToggleLista
     };
   }
 
@@ -241,9 +272,18 @@ export function initTelaCaixinhas({ categorias, membros, uid }) {
     return btn;
   }
 
-  function renderLista(listaEl, itens) {
+  function renderLista(listaEl, itens, btnToggleEl) {
     if (!listaEl) return;
     listaEl.innerHTML = "";
+
+    if (btnToggleEl) {
+      // Mesmo com 0 itens, mantém o botão (mostra "Ver lançamentos (0)") em vez de
+      // escondê-lo — evita o caso de a lista ficar recolhida (mobile) sem nenhum jeito
+      // de abrir e ver a mensagem "Nenhum gasto avulso neste mês.".
+      btnToggleEl.dataset.count = String(itens.length);
+      sincronizarBotaoToggleLista(btnToggleEl, listaEl);
+    }
+
     if (itens.length === 0) {
       const li = document.createElement("li");
       li.className = "lanc-item caixinha-vazia";
@@ -373,7 +413,7 @@ export function initTelaCaixinhas({ categorias, membros, uid }) {
           ref.aviso.textContent = "Defina o limite deste mês.";
         }
 
-        renderLista(ref.lista, candidatos);
+        renderLista(ref.lista, candidatos, ref.btnToggleLista);
       });
     } catch (erro) {
       console.error("Erro ao carregar as caixinhas:", erro);
