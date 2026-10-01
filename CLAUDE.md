@@ -463,6 +463,17 @@ cada um respondendo uma pergunta diferente:
   Mesmo filtro usado nas Caixinhas, mas somando as DUAS pessoas (visão da casa).
 - **Saldo Caixa** = Total Caixa − Gastos do Dia a Dia.
 
+### Exportar para Excel (aba Mês)
+Botão **"Exportar Excel"** na aba Mês, perto dos dois quadros, que baixa um `.xlsx` do
+**mês atualmente selecionado** (navegação de mês), no regime de caixa (eixo desembolso):
+- `/lancamentos` com `obterMesDesembolso(l) === mesSelecionado` (despesas e receitas).
+- `/receber` com `mesEsperado === mesSelecionado` e `status === "pendente"` (ainda não
+  confirmados, mas esperados).
+Colunas legíveis (nome da categoria/cartão, não o id): Data, Descrição, Categoria, Tipo,
+Valor, Meio de Pagamento, Cartão, Responsável, Parcela, Status, Mês Desembolso/Esperado,
+Origem. Gerado no cliente via SheetJS (CDN), sem backend. Nome do arquivo reflete o mês
+exportado (ex.: `caixa-2026-09.xlsx`).
+
 ---
 
 ## Controle de concorrência

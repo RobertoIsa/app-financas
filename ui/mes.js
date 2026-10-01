@@ -37,6 +37,27 @@ function formatarMes(mesISO) {
   return `${NOMES_MES[mes - 1]} ${ano}`;
 }
 
+function formatarDataBR(dataISO) {
+  if (!dataISO) return "—";
+  const partes = dataISO.split("-");
+  if (partes.length !== 3) return dataISO;
+  return `${partes[2]}/${partes[1]}/${partes[0]}`;
+}
+
+const MEIOS_PAGAMENTO_LEGIVEIS = {
+  dinheiro: "Dinheiro",
+  debito: "Débito",
+  pix: "Pix",
+  transferencia: "Transferência",
+  credito: "Crédito"
+};
+
+// Colunas do Excel exportado — ver CLAUDE.md "Exportar para Excel (aba Mês)".
+const COLUNAS_EXPORTACAO_EXCEL = [
+  "Data", "Descrição", "Categoria", "Tipo", "Valor (R$)", "Meio de Pagamento",
+  "Cartão", "Responsável", "Parcela", "Status", "Mês Desembolso/Esperado", "Origem"
+];
+
 export function initTelaMes({ categorias, uid }) {
   const rotulo = document.getElementById("mesnav-label");
   const btnAnterior = document.getElementById("mesnav-anterior");
@@ -879,8 +900,136 @@ export function initTelaMes({ categorias, uid }) {
     carregar();
   });
 
+  // "Exportar Excel" (ver CLAUDE.md "Exportar para Excel (aba Mês)") — exporta o mês
+  // ATUALMENTE selecionado na navegação (fecha sobre `mesSelecionado` no momento do
+  // clique, não um mês fixo). Mesmas duas fontes/eixo desembolso da aba Mês: lançamentos
+  // via obterMesDesembolso + recebíveis pendentes por mesEsperado, com o mesmo merge por
+  // id (desembolso + competência + faturaMes atual/anterior) usado em carregar() pra
+  // cobrir lançamentos de crédito antigos sem mesDesembolso gravado.
+  const btnExportar = document.getElementById("mes-exportar-excel");
+  const statusExportar = document.getElementById("mes-exportar-status");
+
+  async function exportarExcel() {
+    const mesAlvo = mesSelecionado;
+    if (statusExportar) statusExportar.textContent = "Gerando planilha...";
+    if (btnExportar) {
+      btnExportar.disabled = true;
+      btnExportar.textContent = "Gerando...";
+    }
+
+    try {
+      const [porDesembolso, porCompetencia, faturaAtual, faturaAnterior, recebiveisDoMes, cartoes] =
+        await Promise.all([
+          lerLancamentosPorMesDesembolso(mesAlvo),
+          lerLancamentosDoMes(mesAlvo),
+          lerLancamentosPorFaturaMes(mesAlvo),
+          lerLancamentosPorFaturaMes(somarMeses(mesAlvo, -1)),
+          lerRecebiveisPorMesEsperado(mesAlvo),
+          lerCartoes()
+        ]);
+
+      const porId = new Map();
+      [porDesembolso, porCompetencia, faturaAtual, faturaAnterior].forEach((lista) => {
+        lista.forEach((l) => {
+          if (l && l.id && !porId.has(l.id)) porId.set(l.id, l);
+        });
+      });
+      const lancamentosDoMesAlvo = [...porId.values()].filter(
+        (l) => obterMesDesembolso(l) === mesAlvo
+      );
+
+      const cartoesPorIdExport = Object.fromEntries(cartoes.map((c) => [c.id, c]));
+      const nomeCartaoExport = (id) => (cartoesPorIdExport[id] && cartoesPorIdExport[id].nome) || "—";
+      const nomeCategoriaExport = (chave) => {
+        const cat = categoriasCache.find((c) => c.chave === chave);
+        return cat ? cat.nome : (chave || "—");
+      };
+      const nomeResponsavelExport = (chave) =>
+        chave ? chave.charAt(0).toUpperCase() + chave.slice(1) : "—";
+      const nomeMeioExport = (meio) => MEIOS_PAGAMENTO_LEGIVEIS[meio] || meio || "—";
+
+      const linhasLancamentos = lancamentosDoMesAlvo.map((l) => ({
+        _ordem: l.data || "9999-99-99",
+        "Data": formatarDataBR(l.data),
+        "Descrição": l.descricao || "(sem descrição)",
+        "Categoria": nomeCategoriaExport(l.categoriaId),
+        "Tipo": l.tipo === "receita" ? "Receita" : "Despesa",
+        "Valor (R$)": (l.valorCentavos || 0) / 100,
+        "Meio de Pagamento": nomeMeioExport(l.meioPagamento),
+        "Cartão": l.meioPagamento === "credito" ? nomeCartaoExport(l.cartaoId) : "—",
+        "Responsável": nomeResponsavelExport(l.responsavel),
+        "Parcela": l.totalParcelas > 1 ? `${l.parcelaAtual}/${l.totalParcelas}` : "—",
+        "Status": l.pago === true ? "Pago" : "Pendente",
+        "Mês Desembolso/Esperado": mesAlvo,
+        "Origem": "Lançamento"
+      }));
+
+      const recebiveisPendentes = recebiveisDoMes.filter((r) => r.status === "pendente");
+      const linhasRecebiveis = recebiveisPendentes.map((r) => ({
+        _ordem: "9999-99-99",
+        "Data": "—",
+        "Descrição": `Recebimento de ${r.devedor || "devedor não informado"}`,
+        "Categoria": "Recebimentos de Terceiros",
+        "Tipo": "A Receber - Pendente",
+        "Valor (R$)": (r.valorCentavos || 0) / 100,
+        "Meio de Pagamento": "—",
+        "Cartão": "—",
+        "Responsável": r.devedor || "—",
+        "Parcela": r.totalParcelas > 1 ? `${r.parcelaAtual}/${r.totalParcelas}` : "—",
+        "Status": "Pendente",
+        "Mês Desembolso/Esperado": mesAlvo,
+        "Origem": "A Receber Pendente"
+      }));
+
+      const todasLinhas = [...linhasLancamentos, ...linhasRecebiveis].sort((a, b) =>
+        a._ordem.localeCompare(b._ordem)
+      );
+      todasLinhas.forEach((linha) => delete linha._ordem);
+
+      // Import dinâmico do SheetJS via CDN — sem instalar pacote, mantém vanilla JS sem
+      // build (ver CLAUDE.md "Stack").
+      const XLSX = await import("https://cdn.sheetjs.com/xlsx-latest/package/xlsx.mjs");
+
+      const planilha = todasLinhas.length > 0
+        ? XLSX.utils.json_to_sheet(todasLinhas, { header: COLUNAS_EXPORTACAO_EXCEL })
+        : XLSX.utils.aoa_to_sheet([COLUNAS_EXPORTACAO_EXCEL]); // sem dados: só o cabeçalho
+
+      planilha["!cols"] = COLUNAS_EXPORTACAO_EXCEL.map((c) => ({ wch: Math.max(12, c.length + 2) }));
+
+      if (todasLinhas.length > 0) {
+        const colValorIndex = COLUNAS_EXPORTACAO_EXCEL.indexOf("Valor (R$)");
+        todasLinhas.forEach((_, indice) => {
+          const endereco = XLSX.utils.encode_cell({ r: indice + 1, c: colValorIndex });
+          if (planilha[endereco]) planilha[endereco].z = '"R$" #,##0.00';
+        });
+      }
+
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, planilha, `Caixa ${mesAlvo}`);
+      XLSX.writeFile(workbook, `caixa-${mesAlvo}.xlsx`);
+
+      if (statusExportar) {
+        statusExportar.textContent = todasLinhas.length > 0
+          ? `Exportado: ${todasLinhas.length} linha(s) de ${formatarMes(mesAlvo)}.`
+          : `Nenhum lançamento ou recebível pendente em ${formatarMes(mesAlvo)} — planilha gerada só com cabeçalho.`;
+      }
+    } catch (erro) {
+      console.error("Erro ao exportar Excel da aba Mês:", erro);
+      if (statusExportar) {
+        statusExportar.textContent = `Erro ao exportar: ${erro.message || erro.code || "erro desconhecido"}`;
+      }
+    } finally {
+      if (btnExportar) {
+        btnExportar.disabled = false;
+        btnExportar.textContent = "📊 Exportar Excel";
+      }
+    }
+  }
+
+  if (btnExportar) btnExportar.addEventListener("click", exportarExcel);
+
   carregar();
-  
+
 
   return {
     recarregarCategorias(novaListaCategorias) {
