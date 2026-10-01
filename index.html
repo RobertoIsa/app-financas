@@ -303,9 +303,18 @@
           <h2 id="caixinhas-titulo">Caixinhas</h2>
           <p class="mes-legenda">
             Orçamento do dia a dia por pessoa — só gastos avulsos (não-recorrentes) do
-            mês atual. Reseta todo mês: não acumula sobra nem dívida. Qualquer um dos
+            mês selecionado. Reseta todo mês: não acumula sobra nem dívida. Qualquer um dos
             dois pode ajustar o limite das duas caixinhas.
           </p>
+          <section aria-labelledby="caixinhas-mesnav-titulo">
+            <h2 id="caixinhas-mesnav-titulo" class="sr-only">Navegador de mês das caixinhas</h2>
+            <div class="mes-nav">
+              <button type="button" id="caixinhas-mesnav-anterior" aria-label="Mês anterior">‹</button>
+              <span id="caixinhas-mesnav-label" class="mes-nav-label" aria-live="polite"></span>
+              <button type="button" id="caixinhas-mesnav-proximo" aria-label="Próximo mês">›</button>
+            </div>
+            <button type="button" id="caixinhas-mesnav-hoje" class="botao-secundario botao-pequeno">Ir para hoje</button>
+          </section>
           <p id="caixinhas-status" role="status" aria-live="polite"></p>
           <div id="caixinhas-grid" class="caixinhas-grid"></div>
         </section>

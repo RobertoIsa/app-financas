@@ -6,9 +6,9 @@
 // de /lancamentos (mesma abordagem da tela "Mês"), evitando o sincronismo frágil que o
 // Caixa exigiu. Só o LIMITE fica gravado em /caixinhas/{pessoa}/{mes}.
 //
-// Regra do que consome a caixinha de uma pessoa, no MÊS ATUAL — eixo DESEMBOLSO
+// Regra do que consome a caixinha de uma pessoa, no mês selecionado — eixo DESEMBOLSO
 // (`mesDesembolso`), NÃO competência (ver CLAUDE.md "Caixinhas", corrigido):
-//   mesDesembolso = mês atual  &&  tipo = "despesa"  &&  responsavel = a pessoa  &&
+//   mesDesembolso = mês selecionado  &&  tipo = "despesa"  &&  responsavel = a pessoa  &&
 //   idRecorrencia ausente/null  &&  categoria != pagamento_cartao/pagamento_fatura
 // (recorrências têm limite próprio, fora da caixinha; o "pagamento_cartao" é a baixa da
 // fatura, não um gasto solto). Por que desembolso e não competência: todas as parcelas
@@ -27,8 +27,6 @@
 // reduzida + badge "Fora da caixinha", pra permitir desmarcar. É mais simples e correto
 // do que sumir com ele (não precisa de um segundo caminho pra "reexibir escondidos").
 //
-// 1ª versão: sempre o mês corrente, sem navegação entre meses (fica pra depois).
-
 import {
   lerLancamentosDoMes,
   lerLancamentosPorMesDesembolso,
@@ -87,10 +85,14 @@ function sincronizarBotaoToggleLista(btn, lista) {
 export function initTelaCaixinhas({ categorias, membros, uid }) {
   const grid = document.getElementById("caixinhas-grid");
   const statusEl = document.getElementById("caixinhas-status");
-  const tituloEl = document.getElementById("caixinhas-titulo");
+  const rotuloMes = document.getElementById("caixinhas-mesnav-label");
+  const btnAnterior = document.getElementById("caixinhas-mesnav-anterior");
+  const btnProximo = document.getElementById("caixinhas-mesnav-proximo");
+  const btnHoje = document.getElementById("caixinhas-mesnav-hoje");
 
   const categoriasCache = categorias || [];
-  const mesAtual = mesDeData(dataHojeISO());
+  let mesSelecionado = mesDeData(dataHojeISO());
+  let pedidoAtual = 0;
 
   // Sem o container não há o que montar — devolve um handle inerte pra não quebrar app.js.
   if (!grid) {
@@ -233,7 +235,7 @@ export function initTelaCaixinhas({ categorias, membros, uid }) {
     ui.botao.disabled = true;
     ui.botao.textContent = "Salvando...";
     try {
-      await salvarCaixinhaLimite(pessoa.chave, mesAtual, centavos, uid);
+      await salvarCaixinhaLimite(pessoa.chave, mesSelecionado, centavos, uid);
       await carregar();
     } catch (erro) {
       console.error("Erro ao salvar limite da caixinha:", erro);
@@ -327,7 +329,11 @@ export function initTelaCaixinhas({ categorias, membros, uid }) {
   }
 
   async function carregar() {
-    if (tituloEl) tituloEl.textContent = `Caixinhas — ${formatarMes(mesAtual)}`;
+    const meuPedido = ++pedidoAtual;
+    const mesDaCarga = mesSelecionado;
+    const mesAtual = mesDeData(dataHojeISO());
+    if (rotuloMes) rotuloMes.textContent = formatarMes(mesDaCarga);
+    if (btnProximo) btnProximo.disabled = mesDaCarga >= mesAtual;
     if (statusEl) statusEl.textContent = "Carregando...";
 
     try {
@@ -341,12 +347,13 @@ export function initTelaCaixinhas({ categorias, membros, uid }) {
       //    antigas sem `mesDesembolso` — o desembolso só pode ser o próprio faturaMes ou
       //    o mês seguinte, então essas duas consultas cobrem todo candidato.
       const [porDesembolso, porCompetencia, faturaAtual, faturaAnterior, ...limites] = await Promise.all([
-        lerLancamentosPorMesDesembolso(mesAtual),
-        lerLancamentosDoMes(mesAtual),
-        lerLancamentosPorFaturaMes(mesAtual),
-        lerLancamentosPorFaturaMes(somarMeses(mesAtual, -1)),
-        ...pessoas.map((p) => lerCaixinhaLimite(p.chave, mesAtual))
+        lerLancamentosPorMesDesembolso(mesDaCarga),
+        lerLancamentosDoMes(mesDaCarga),
+        lerLancamentosPorFaturaMes(mesDaCarga),
+        lerLancamentosPorFaturaMes(somarMeses(mesDaCarga, -1)),
+        ...pessoas.map((p) => lerCaixinhaLimite(p.chave, mesDaCarga))
       ]);
+      if (meuPedido !== pedidoAtual) return;
       if (statusEl) statusEl.textContent = "";
 
       const porId = new Map();
@@ -356,9 +363,9 @@ export function initTelaCaixinhas({ categorias, membros, uid }) {
         });
       });
       // Cada parcela é um /lancamentos próprio com seu mesDesembolso — este filtro deixa
-      // passar só a parcela cujo vencimento cai no mês corrente, nunca a compra inteira.
+      // passar só a parcela cujo vencimento cai no mês selecionado, nunca a compra inteira.
       const lancamentosDoMes = [...porId.values()].filter(
-        (l) => obterMesDesembolso(l) === mesAtual
+        (l) => obterMesDesembolso(l) === mesDaCarga
       );
 
       pessoas.forEach((pessoa, indice) => {
@@ -417,11 +424,32 @@ export function initTelaCaixinhas({ categorias, membros, uid }) {
       });
     } catch (erro) {
       console.error("Erro ao carregar as caixinhas:", erro);
+      if (meuPedido !== pedidoAtual) return;
       if (statusEl) {
         statusEl.textContent = `Erro ao carregar as caixinhas: ${erro.message || erro.code || "erro desconhecido"}`;
       }
     }
   }
+
+  function navegarPara(mes) {
+    const mesAtual = mesDeData(dataHojeISO());
+    if (mes > mesAtual) return;
+    mesSelecionado = mes;
+    pessoas.forEach((pessoa) => {
+      refs[pessoa.chave].input.value = "";
+    });
+    carregar();
+  }
+
+  if (btnAnterior) btnAnterior.addEventListener("click", () => {
+    navegarPara(somarMeses(mesSelecionado, -1));
+  });
+  if (btnProximo) btnProximo.addEventListener("click", () => {
+    navegarPara(somarMeses(mesSelecionado, 1));
+  });
+  if (btnHoje) btnHoje.addEventListener("click", () => {
+    navegarPara(mesDeData(dataHojeISO()));
+  });
 
   carregar();
 

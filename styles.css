@@ -479,7 +479,8 @@ section + section {
   font-weight: 700;
 }
 
-#mesnav-hoje {
+#mesnav-hoje,
+#caixinhas-mesnav-hoje {
   display: block;
   margin: 0 auto 1.25rem;
 }
