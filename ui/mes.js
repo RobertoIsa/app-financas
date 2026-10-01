@@ -954,7 +954,7 @@ export function initTelaMes({ categorias, uid }) {
         "Descrição": l.descricao || "(sem descrição)",
         "Categoria": nomeCategoriaExport(l.categoriaId),
         "Tipo": l.tipo === "receita" ? "Receita" : "Despesa",
-        "Valor (R$)": (l.valorCentavos || 0) / 100,
+        "Valor (R$)": l.tipo === "receita" ? (l.valorCentavos || 0) / 100 : -(l.valorCentavos || 0) / 100,
         "Meio de Pagamento": nomeMeioExport(l.meioPagamento),
         "Cartão": l.meioPagamento === "credito" ? nomeCartaoExport(l.cartaoId) : "—",
         "Responsável": nomeResponsavelExport(l.responsavel),
