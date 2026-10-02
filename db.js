@@ -428,6 +428,18 @@ export async function lerLancamentosDaFatura(faturaMes, cartaoId) {
     .filter(lanc => lanc.cartaoId === cartaoId && lanc.tipo === 'despesa');
 }
 
+// Lê TODOS os /lancamentos, sem filtro por índice — usado só pra localizar o lançamento
+// de pagamento de fatura (categoriaId "pagamento_cartao"/"pagamento_fatura") de um cartão
+// específico (ver "Desfazer Pagamento da Fatura" em ui/mes.js): esse lançamento não
+// guarda cartaoId nem faturaMes, só descrição ("Pagamento Fatura {faturaMes}") e valor,
+// então não há índice que resolva essa busca — precisa varrer e filtrar no cliente.
+export async function lerTodosLancamentos() {
+  const snapshot = await get(ref(db, "lancamentos"));
+  if (!snapshot.exists()) return [];
+  const dados = snapshot.val();
+  return Object.entries(dados).map(([id, valor]) => ({ id, ...valor }));
+}
+
 // Lê todos os lançamentos cujo faturaMes é o mês informado, de qualquer cartão — usado
 // como fallback na tela Mês pra achar lançamentos de crédito antigos que não têm o campo
 // mesDesembolso preenchido (ver logic.js "obterMesDesembolso"): como mesDesembolso só pode

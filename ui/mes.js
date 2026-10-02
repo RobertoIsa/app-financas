@@ -4,6 +4,7 @@ import {
   lerLancamentosDoMes,
   lerLancamentosPorMesDesembolso,
   lerLancamentosPorFaturaMes,
+  lerTodosLancamentos,
   lerRecebiveisPorMesEsperado,
   lerRecorrencias,
   lerCartoes,
@@ -506,6 +507,63 @@ export function initTelaMes({ categorias, uid }) {
           }
         });
         divPendente.appendChild(btnAcaoGlobal);
+      }
+
+      // "Desfazer Pagamento da Fatura": só aparece quando a fatura deste cartão está
+      // 100% paga (Falta Quitar = R$0,00) — se estiver parcial/pendente, o fluxo normal
+      // acima ("Pagar Tudo"/pagamento individual) já cobre o caso. Evita o usuário ter
+      // que procurar manualmente o lançamento "Pagamento Fatura {mês}" na aba Lançar.
+      if (faturaCtx && tipo === "despesa" && pendente === 0 && total > 0) {
+        const btnDesfazerPagamento = document.createElement("button");
+        btnDesfazerPagamento.type = "button";
+        btnDesfazerPagamento.textContent = "↩️ Desfazer Pagamento da Fatura";
+        btnDesfazerPagamento.className = "botao-secundario botao-pequeno";
+        btnDesfazerPagamento.style.marginLeft = "10px";
+
+        btnDesfazerPagamento.addEventListener("click", async (e) => {
+          e.stopPropagation();
+          if (!confirm("Desfazer o pagamento desta fatura? As compras voltam a ficar pendentes e o valor é estornado no Caixa.")) {
+            return;
+          }
+          btnDesfazerPagamento.disabled = true;
+          btnDesfazerPagamento.textContent = "Desfazendo...";
+          try {
+            // O lançamento de pagamento (categoriaId "pagamento_cartao"/"pagamento_fatura",
+            // criado por pagarFaturaEmLote) não guarda cartaoId nem faturaMes — só a
+            // descrição "Pagamento Fatura {faturaMes}" e o valor total pago. Localiza por
+            // esses dois campos entre TODOS os lançamentos (lerTodosLancamentos, sem
+            // índice — ver db.js); com valor igual ao total (fatura 100% paga, então
+            // total === pago) e, havendo mais de um candidato, pega o mais recente.
+            const faturaMesAlvo = (itens || []).find((i) => i.faturaMes)?.faturaMes || mesSelecionado;
+            const todosLancamentos = await lerTodosLancamentos();
+            const candidatos = todosLancamentos.filter(
+              (l) =>
+                (l.categoriaId === "pagamento_cartao" || l.categoriaId === "pagamento_fatura") &&
+                l.descricao === `Pagamento Fatura ${faturaMesAlvo}` &&
+                l.valorCentavos === total
+            );
+            const pagamento = candidatos.sort((a, b) => (b.criadoEm || 0) - (a.criadoEm || 0))[0];
+
+            if (!pagamento) {
+              alert('Não encontrei o lançamento "Pagamento Fatura" desta fatura — desfaça manualmente na aba Lançar.');
+              btnDesfazerPagamento.disabled = false;
+              btnDesfazerPagamento.textContent = "↩️ Desfazer Pagamento da Fatura";
+              return;
+            }
+
+            // Reaproveita exatamente excluirLancamento (db.js) — já trata o estorno das
+            // compras pra pago:false e o estorno no Caixa (ver CLAUDE.md), nada novo
+            // reimplementado aqui.
+            await excluirLancamento(pagamento, uid);
+            await carregar();
+          } catch (erro) {
+            alert("Erro ao desfazer pagamento da fatura: " + erro.message);
+            btnDesfazerPagamento.disabled = false;
+            btnDesfazerPagamento.textContent = "↩️ Desfazer Pagamento da Fatura";
+          }
+        });
+
+        divPendente.appendChild(btnDesfazerPagamento);
       }
 
       linhaDetalhe.appendChild(divPago);
