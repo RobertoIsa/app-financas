@@ -777,39 +777,42 @@ export function initTelaMes({ categorias, uid }) {
         (l) => obterMesDesembolso(l) === mesSelecionado
       );
 
-      // Despesas a Pagar = despesas RECORRENTES pendentes (mesDesembolso=M, pago=false,
-      // qualquer meio de pagamento) + despesas NÃO-recorrentes NO CRÉDITO pendentes
-      // (mesDesembolso=M, pago=false). Não inclui despesa imediata não-recorrente —
-      // essa é "dinheiro que já saiu", domínio do Quadro 2 (Caixa Real).
-      const despesasRecorrentesPendentes = todosPorDesembolsoDoMes.filter(
-        (l) => l.tipo === "despesa" && l.idRecorrencia && l.pago === false
+      // Despesas do Mês (ver CLAUDE.md, renomeado/corrigido de "Despesas a Pagar"): TODAS
+      // as despesas RECORRENTES com mesDesembolso=M, pagas OU NÃO, + TODAS as despesas
+      // NÃO-recorrentes NO CRÉDITO com mesDesembolso=M, pagas OU NÃO — sem filtro por
+      // `pago`, de propósito: é o comprometimento TOTAL do mês, não o que ainda falta
+      // pagar, pra não oscilar (diminuir) conforme o usuário vai pagando contas durante o
+      // mês. Não inclui despesa imediata não-recorrente — essa é "dinheiro que já saiu",
+      // domínio do Quadro 2 (Caixa Real).
+      const despesasRecorrentesDoMes = todosPorDesembolsoDoMes.filter(
+        (l) => l.tipo === "despesa" && l.idRecorrencia
       );
       // Ocorrências de recorrência ainda NÃO materializadas (só existem pra meses
       // futuros — recorrentesVirtuaisDesembolso fica vazio pra mês atual/passado, pois
-      // aí a materialização acima já rodou): por definição ainda não foram pagas, contam
-      // como "a pagar" igual às materializadas pendentes. Dedupe defensivo por
-      // idRecorrencia contra o conjunto real: uma regra visitada/materializada numa
-      // competência passada, cujo desembolso cai neste mês futuro, não deve contar 2×
-      // (uma vez como real, outra como projeção virtual da mesma regra).
+      // aí a materialização acima já rodou): contam igual às materializadas. Dedupe
+      // defensivo por idRecorrencia contra o conjunto real: uma regra visitada/
+      // materializada numa competência passada, cujo desembolso cai neste mês futuro,
+      // não deve contar 2× (uma vez como real, outra como projeção virtual da mesma
+      // regra).
       const idsRecorrenciaJaMaterializados = new Set(
-        todosPorDesembolsoDoMes.filter((l) => l.idRecorrencia).map((l) => l.idRecorrencia)
+        despesasRecorrentesDoMes.map((l) => l.idRecorrencia)
       );
-      const despesasRecorrentesPendentesVirtuais = recorrentesVirtuaisDesembolso.filter(
+      const despesasRecorrentesVirtuais = recorrentesVirtuaisDesembolso.filter(
         (r) => r.tipo === "despesa" && !idsRecorrenciaJaMaterializados.has(r.idRecorrencia)
       );
-      const despesasCreditoNaoRecorrentesPendentes = despesasCreditoDoMes.filter(
-        (l) => !l.idRecorrencia && l.pago === false
+      const despesasCreditoNaoRecorrentesDoMes = despesasCreditoDoMes.filter(
+        (l) => !l.idRecorrencia
       );
 
-      const totalDespesasAPagar =
-        despesasRecorrentesPendentes.reduce((s, l) => s + l.valorCentavos, 0) +
-        despesasRecorrentesPendentesVirtuais.reduce((s, r) => s + r.valorCentavos, 0) +
-        despesasCreditoNaoRecorrentesPendentes.reduce((s, l) => s + l.valorCentavos, 0);
+      const totalDespesasDoMes =
+        despesasRecorrentesDoMes.reduce((s, l) => s + l.valorCentavos, 0) +
+        despesasRecorrentesVirtuais.reduce((s, r) => s + r.valorCentavos, 0) +
+        despesasCreditoNaoRecorrentesDoMes.reduce((s, l) => s + l.valorCentavos, 0);
 
-      const saldoDoMes = totalGeralReceitas - totalDespesasAPagar;
+      const saldoDoMes = totalGeralReceitas - totalDespesasDoMes;
 
       if (elProjReceitas) elProjReceitas.textContent = formatCentavos(totalGeralReceitas);
-      if (elProjDespesasAPagar) elProjDespesasAPagar.textContent = formatCentavos(totalDespesasAPagar);
+      if (elProjDespesasAPagar) elProjDespesasAPagar.textContent = formatCentavos(totalDespesasDoMes);
       if (elProjSaldo) {
         elProjSaldo.textContent = formatCentavos(saldoDoMes);
         elProjSaldo.className = "mes-resumo-valor";

@@ -449,12 +449,17 @@ cada um respondendo uma pergunta diferente:
 - **Total de Receitas:** tudo esperado no mês M — receitas já confirmadas/recebidas +
   recebíveis de `/receber` pendentes com `mesEsperado = M` + recorrências de receita
   (materializadas ou virtuais) de M.
-- **Despesas a Pagar:** despesas recorrentes **ainda pendentes** (`pago:false`,
-  `mesDesembolso = M`) **+** despesas não-recorrentes **no crédito** cuja fatura ainda não
-  foi paga e vence em M (`pago:false`, `mesDesembolso = M`, `meioPagamento = credito`,
-  sem `idRecorrencia`). NÃO inclui gastos imediatos não-recorrentes (esses já saíram de
-  verdade e são domínio do Quadro 2).
-- **Saldo do Mês** = Total de Receitas − Despesas a Pagar.
+- **Despesas do Mês** *(renomeado de "Despesas a Pagar" — corrigido para NÃO oscilar
+  conforme o usuário paga contas durante o mês)*: TODAS as despesas recorrentes com
+  `mesDesembolso = M`, **pagas ou não** **+** TODAS as despesas não-recorrentes **no
+  crédito** com `mesDesembolso = M`, **pagas ou não** (`meioPagamento = credito`, sem
+  `idRecorrencia`). **Não filtra mais por `pago:false`** — o número representa o
+  comprometimento total do mês, e só muda se um gasto for adicionado/removido/editado,
+  nunca só por ter sido pago. NÃO inclui gastos imediatos não-recorrentes (esses são
+  domínio do Quadro 2).
+- **Saldo do Mês** = Total de Receitas − Despesas do Mês. Representa "quanto tende a
+  sobrar no fim do mês", de forma estável — não um saldo que cresce artificialmente à
+  medida que contas são pagas.
 
 **Quadro 2 — Caixa real** (visão de dinheiro que já saiu de fato):
 - **Total Caixa:** saldo atual acumulado — mesmo valor da aba Caixa (`/caixa/saldo`).
