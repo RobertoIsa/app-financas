@@ -75,6 +75,9 @@ export function initTelaMes({ categorias, uid }) {
   const elCaixaGastosDiaDia = document.getElementById("mes-caixa-gastos-dia-dia");
   const elCaixaSaldo = document.getElementById("mes-caixa-saldo");
 
+  // Saldo Real (ver CLAUDE.md "Saldo Real") — terceiro ângulo, abaixo do Quadro 2.
+  const elSaldoReal = document.getElementById("mes-saldo-real");
+
   const listaReceitas = document.getElementById("lista-mes-receitas");
   const listaFaturas = document.getElementById("lista-mes-faturas");
   const listaDespesasVista = document.getElementById("lista-mes-despesas-vista");
@@ -736,6 +739,7 @@ export function initTelaMes({ categorias, uid }) {
       if (elCaixaTotal) elCaixaTotal.textContent = "—";
       if (elCaixaGastosDiaDia) elCaixaGastosDiaDia.textContent = "—";
       if (elCaixaSaldo) elCaixaSaldo.textContent = "—";
+      if (elSaldoReal) elSaldoReal.textContent = "—";
 
       let [lancamentosCompetencia, lancamentosDesembolso, recebiveisDoMes, cartoes, recorrencias, saldoCaixa] = await Promise.all([
         lerLancamentosDoMes(mesSelecionado),
@@ -956,6 +960,20 @@ export function initTelaMes({ categorias, uid }) {
         elCaixaSaldo.className = "mes-resumo-valor";
         if (saldoCaixaMes < 0) elCaixaSaldo.classList.add("lanc-despesa");
         if (saldoCaixaMes > 0) elCaixaSaldo.classList.add("lanc-receita");
+      }
+
+      // ---- Saldo Real (ver CLAUDE.md "Saldo Real") ----
+      // = Saldo do Mês (Quadro 1) − Gastos do Dia a Dia (Quadro 2), reaproveitando os
+      // dois valores já calculados acima, sem refazer nenhuma consulta/filtro. Equivale
+      // matematicamente a "todas as receitas menos todas as despesas do mês, de
+      // qualquer eixo ou tipo, somadas sem distinção" — o terceiro ângulo, além da
+      // Projeção e do Caixa Real.
+      const saldoReal = saldoDoMes - totalGastosDiaDia;
+      if (elSaldoReal) {
+        elSaldoReal.textContent = formatCentavos(saldoReal);
+        elSaldoReal.className = "mes-resumo-valor";
+        if (saldoReal < 0) elSaldoReal.classList.add("lanc-despesa");
+        if (saldoReal > 0) elSaldoReal.classList.add("lanc-receita");
       }
 
       if (listaReceitas) {

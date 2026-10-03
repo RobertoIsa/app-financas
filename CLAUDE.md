@@ -488,6 +488,19 @@ cada um respondendo uma pergunta diferente:
   Mesmo filtro usado nas Caixinhas, mas somando as DUAS pessoas (visão da casa).
 - **Saldo Caixa** = Total Caixa − Gastos do Dia a Dia.
 
+**Saldo Real** (card único, posicionado logo ABAIXO do Quadro 2, antes da seção
+"Receitas" começar): `Saldo do Mês − Gastos do Dia a Dia`. Matematicamente equivale a
+"todas as receitas do mês menos todas as despesas do mês, de qualquer eixo ou tipo,
+somadas sem distinção" (validado manualmente: bate com Total de Receitas − (Despesas do
+Mês + Gastos do Dia a Dia)). É o terceiro ângulo, além da Projeção e do Caixa Real: quanto
+sobraria se tudo — recorrente e avulso, crédito e à vista — fosse contado de uma vez só.
+Destaque vermelho/verde conforme sinal, como os demais saldos do app.
+
+### Box-resumo no topo da aba "Mês"
+Logo abaixo do navegador de mês (antes do Quadro 1), um card curto explicando os três
+números da tela em uma frase cada — Projeção do Mês, Caixa Real, Saldo Real — para quem
+abre a tela sem lembrar as definições de cada um.
+
 ### Exportar para Excel (aba Mês)
 Botão **"Exportar Excel"** na aba Mês, perto dos dois quadros, que baixa um `.xlsx` do
 **mês atualmente selecionado** (navegação de mês), no regime de caixa (eixo desembolso):

@@ -530,6 +530,17 @@ section + section {
   margin: 0 0 1.25rem;
 }
 
+.mes-boxresumo p {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--cor-texto-suave);
+  line-height: 1.5;
+}
+
+.mes-boxresumo strong {
+  color: var(--cor-texto);
+}
+
 .mes-exportar {
   margin-bottom: 1.25rem;
 }

@@ -222,6 +222,16 @@
           <button type="button" id="mesnav-hoje" class="botao-secundario botao-pequeno">Ir para hoje</button>
         </section>
 
+        <div class="card-grupo mes-boxresumo">
+          <p>
+            <strong>Como ler esta tela:</strong> Projeção do Mês mostra o que você espera
+            receber e o que ainda compromete seu orçamento até o fim do mês. Caixa Real
+            mostra o dinheiro que você tem de fato, descontado do que já saiu no dia a
+            dia. Saldo Real junta os dois: quanto sobraria se tudo — recorrente e avulso,
+            cartão e à vista — fosse somado de uma vez.
+          </p>
+        </div>
+
         <div class="mes-exportar">
           <button type="button" id="mes-exportar-excel" class="botao-secundario">📊 Exportar Excel</button>
           <p id="mes-exportar-status" role="status" aria-live="polite" class="mes-exportar-status"></p>
@@ -269,6 +279,18 @@
               <span class="mes-resumo-rotulo">Saldo Caixa</span>
               <span id="mes-caixa-saldo" class="mes-resumo-valor">—</span>
             </div>
+          </div>
+        </section>
+
+        <section aria-labelledby="mes-saldoreal-titulo">
+          <h2 id="mes-saldoreal-titulo">Saldo Real</h2>
+          <p class="mes-legenda">
+            O terceiro ângulo: quanto sobraria se tudo — recorrente e avulso, cartão e à
+            vista — fosse somado de uma vez só.
+          </p>
+          <div class="mes-resumo-item">
+            <span class="mes-resumo-rotulo">Saldo Real</span>
+            <span id="mes-saldo-real" class="mes-resumo-valor">—</span>
           </div>
         </section>
 
