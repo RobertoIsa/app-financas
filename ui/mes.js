@@ -94,6 +94,55 @@ export function initTelaMes({ categorias, uid }) {
     return `${cat.nome}${cat.icone ? " " + cat.icone : ""}`;
   }
 
+  // Padrão de recolhimento reaproveitado das Caixinhas (ver ui/caixinhas.js): lista de
+  // itens individuais recolhida por padrão + botão "Ver lançamentos (N)" + rolagem
+  // própria quando aberta. Diferença aqui: é UNIVERSAL (desktop + mobile), não só
+  // mobile como nas Caixinhas — o volume de informação (devedores/categorias/faturas)
+  // é um problema nos dois tamanhos de tela nesta aba. Por isso usa classes CSS
+  // próprias (.mes-grupo-lista*), não as .caixinha-lista* (essas têm a desfeita mobile-
+  // only no @media(min-width:768px) que não queremos aqui).
+  let contadorListaColapsavelMes = 0;
+
+  function sincronizarBotaoToggleListaMes(btn, lista) {
+    if (!btn || !lista) return;
+    const fechada = lista.classList.contains("mes-grupo-lista-fechada");
+    const n = Number(btn.dataset.count || 0);
+    btn.textContent = fechada ? `Ver lançamentos (${n})` : "Ocultar lançamentos";
+    btn.setAttribute("aria-expanded", fechada ? "false" : "true");
+  }
+
+  // Cria { btnToggle, lista } — um <button> + <ul> prontos pra receber itens via
+  // appendChild, com o toggle já ligado. O chamador só precisa setar
+  // `btnToggle.dataset.count` com a quantidade real de itens (ou chamar
+  // `finalizarListaColapsavel`, abaixo) antes de anexar no DOM.
+  function criarBlocoListaColapsavel() {
+    const btnToggle = document.createElement("button");
+    btnToggle.type = "button";
+    btnToggle.className = "botao-secundario botao-pequeno mes-grupo-lista-toggle";
+    btnToggle.dataset.count = "0";
+
+    const lista = document.createElement("ul");
+    lista.className = "mes-grupo-lista mes-grupo-lista-fechada";
+    lista.id = `mes-grupo-lista-${++contadorListaColapsavelMes}`;
+    btnToggle.setAttribute("aria-controls", lista.id);
+    sincronizarBotaoToggleListaMes(btnToggle, lista);
+
+    btnToggle.addEventListener("click", (e) => {
+      e.stopPropagation();
+      lista.classList.toggle("mes-grupo-lista-fechada");
+      sincronizarBotaoToggleListaMes(btnToggle, lista);
+    });
+
+    return { btnToggle, lista };
+  }
+
+  // Atualiza o contador do botão depois que os itens já foram anexados à lista (ou só a
+  // contagem é conhecida de antemão) — mantém o rótulo "Ver lançamentos (N)" correto.
+  function finalizarListaColapsavel(btnToggle, lista, quantidade) {
+    btnToggle.dataset.count = String(quantidade);
+    sincronizarBotaoToggleListaMes(btnToggle, lista);
+  }
+
   // Abre (ou fecha, se já aberto) um mini-formulário inline pedindo o MÊS do recebimento
   // — nunca uma data livre (ver CLAUDE.md "Crédito a receber", "Baixa: escolha de MÊS,
   // não de data exata"): um campo de data livre com "hoje" como padrão fazia confirmações
@@ -233,9 +282,11 @@ export function initTelaMes({ categorias, uid }) {
     item.style.flexDirection = "column";
     item.style.alignItems = "stretch";
 
-    const linhaPrincipal = document.createElement("div");
-    linhaPrincipal.className = "lanc-item-linha";
-    linhaPrincipal.style.cursor = "pointer";
+    // Cabeçalho (título + total) SEMPRE visível — não há mais um clique pra revelar os
+    // números; só a lista de itens individuais abaixo é que se recolhe (ver CLAUDE.md,
+    // melhoria de recolhimento universal).
+    const cabecalho = document.createElement("div");
+    cabecalho.className = "lanc-item-linha";
 
     const desc = document.createElement("span");
     desc.className = "lanc-desc";
@@ -246,25 +297,20 @@ export function initTelaMes({ categorias, uid }) {
     valorTotal.className = "lanc-valor lanc-receita";
     valorTotal.textContent = `+ ${formatCentavos(total)}`;
 
-    linhaPrincipal.appendChild(desc);
-    linhaPrincipal.appendChild(valorTotal);
-    item.appendChild(linhaPrincipal);
-
-    const painelDetalhes = document.createElement("div");
-    painelDetalhes.style.display = "none";
-    painelDetalhes.style.marginTop = "10px";
-    painelDetalhes.style.paddingTop = "10px";
-    painelDetalhes.style.borderTop = "1px solid var(--borda)";
+    cabecalho.appendChild(desc);
+    cabecalho.appendChild(valorTotal);
+    item.appendChild(cabecalho);
 
     if (total > 0) {
       const linhaDetalhe = document.createElement("div");
       linhaDetalhe.style.fontSize = "0.85em";
       linhaDetalhe.style.color = "var(--cor-texto-suave)";
+      linhaDetalhe.style.marginTop = "8px";
       linhaDetalhe.style.marginBottom = "10px";
       linhaDetalhe.style.display = "flex";
       linhaDetalhe.style.justifyContent = "space-between";
       linhaDetalhe.innerHTML = `<span>✅ Recebido: R$ ${formatCentavos(pago)}</span><span>⏳ A Receber: R$ ${formatCentavos(pendente)}</span>`;
-      painelDetalhes.appendChild(linhaDetalhe);
+      item.appendChild(linhaDetalhe);
     }
 
     // Um item de /receber (pendente) não tem "tipo" nem "pago" — tem "status". A receita
@@ -286,6 +332,8 @@ export function initTelaMes({ categorias, uid }) {
         const blocoDevedor = document.createElement("div");
         blocoDevedor.style.marginBottom = "12px";
 
+        // Cabeçalho do devedor (nome + total pendente + "Receber Tudo") SEMPRE visível —
+        // só a lista de parcelas dele (abaixo) se recolhe.
         const linhaDevedor = document.createElement("div");
         linhaDevedor.style.display = "flex";
         linhaDevedor.style.justifyContent = "space-between";
@@ -321,11 +369,10 @@ export function initTelaMes({ categorias, uid }) {
         linhaDevedor.appendChild(btnReceberTudoDevedor);
         blocoDevedor.appendChild(linhaDevedor);
 
-        const listaItensDevedor = document.createElement("ul");
-        listaItensDevedor.style.listStyle = "none";
-        listaItensDevedor.style.padding = "0";
-        listaItensDevedor.style.margin = "4px 0 0";
-        listaItensDevedor.style.fontSize = "0.9em";
+        // Lista de parcelas pendentes deste devedor — recolhida por padrão, com seu
+        // próprio "Ver lançamentos (N)", independente dos outros devedores e da lista de
+        // "Recebidos" abaixo (ver criarBlocoListaColapsavel).
+        const { btnToggle: btnToggleDevedor, lista: listaItensDevedor } = criarBlocoListaColapsavel();
 
         itensDevedor.forEach((r) => {
           const sub = document.createElement("li");
@@ -351,9 +398,11 @@ export function initTelaMes({ categorias, uid }) {
           sub.appendChild(btnReceber);
           listaItensDevedor.appendChild(sub);
         });
+        finalizarListaColapsavel(btnToggleDevedor, listaItensDevedor, itensDevedor.length);
 
+        blocoDevedor.appendChild(btnToggleDevedor);
         blocoDevedor.appendChild(listaItensDevedor);
-        painelDetalhes.appendChild(blocoDevedor);
+        item.appendChild(blocoDevedor);
       }
     }
 
@@ -363,13 +412,11 @@ export function initTelaMes({ categorias, uid }) {
       tituloRecebidos.style.margin = pendentesRaw.length > 0 ? "4px 0" : "0 0 4px";
       tituloRecebidos.style.fontSize = "0.85em";
       tituloRecebidos.style.color = "var(--cor-texto-suave)";
-      painelDetalhes.appendChild(tituloRecebidos);
+      item.appendChild(tituloRecebidos);
 
-      const listaRecebidos = document.createElement("ul");
-      listaRecebidos.style.listStyle = "none";
-      listaRecebidos.style.padding = "0";
-      listaRecebidos.style.margin = "0";
-      listaRecebidos.style.fontSize = "0.9em";
+      // Lista de recebimentos já confirmados — mesmo padrão de recolhimento, própria e
+      // independente da(s) lista(s) de pendentes acima.
+      const { btnToggle: btnToggleRecebidos, lista: listaRecebidos } = criarBlocoListaColapsavel();
 
       jaRecebidos.forEach((l) => {
         const sub = document.createElement("li");
@@ -389,15 +436,11 @@ export function initTelaMes({ categorias, uid }) {
         sub.appendChild(acoesDiv);
         listaRecebidos.appendChild(sub);
       });
+      finalizarListaColapsavel(btnToggleRecebidos, listaRecebidos, jaRecebidos.length);
 
-      painelDetalhes.appendChild(listaRecebidos);
+      item.appendChild(btnToggleRecebidos);
+      item.appendChild(listaRecebidos);
     }
-
-    item.appendChild(painelDetalhes);
-
-    linhaPrincipal.addEventListener("click", () => {
-      painelDetalhes.style.display = painelDetalhes.style.display === "none" ? "block" : "none";
-    });
 
     return item;
   }
@@ -416,9 +459,11 @@ export function initTelaMes({ categorias, uid }) {
     item.style.flexDirection = "column";
     item.style.alignItems = "stretch";
 
-    const linhaPrincipal = document.createElement("div");
-    linhaPrincipal.className = "lanc-item-linha";
-    linhaPrincipal.style.cursor = "pointer";
+    // Cabeçalho (título + total) SEMPRE visível — não há mais um clique pra revelar os
+    // números/botões de ação; só a lista de lançamentos individuais abaixo é que se
+    // recolhe (ver CLAUDE.md, melhoria de recolhimento universal, desktop + mobile).
+    const cabecalho = document.createElement("div");
+    cabecalho.className = "lanc-item-linha";
 
     const desc = document.createElement("span");
     desc.className = "lanc-desc";
@@ -430,15 +475,9 @@ export function initTelaMes({ categorias, uid }) {
     const sinal = tipo === "receita" ? "+" : "−";
     valorTotal.textContent = `${sinal} ${formatCentavos(total)}`;
 
-    linhaPrincipal.appendChild(desc);
-    linhaPrincipal.appendChild(valorTotal);
-    item.appendChild(linhaPrincipal);
-
-    const painelDetalhes = document.createElement("div");
-    painelDetalhes.style.display = "none";
-    painelDetalhes.style.marginTop = "10px";
-    painelDetalhes.style.paddingTop = "10px";
-    painelDetalhes.style.borderTop = "1px solid var(--borda)";
+    cabecalho.appendChild(desc);
+    cabecalho.appendChild(valorTotal);
+    item.appendChild(cabecalho);
 
     if (total > 0) {
       const linhaDetalhe = document.createElement("div");
@@ -585,13 +624,12 @@ export function initTelaMes({ categorias, uid }) {
       linhaDetalhe.appendChild(divPendente);
       item.appendChild(linhaDetalhe);
     }
-    
-    const subLista = document.createElement("ul");
-    subLista.style.listStyle = "none";
-    subLista.style.padding = "0";
-    subLista.style.margin = "0";
-    subLista.style.fontSize = "0.9em";
-    painelDetalhes.appendChild(subLista);
+
+    // Lista de lançamentos individuais deste grupo — recolhida por padrão, com seu
+    // próprio "Ver lançamentos (N)" (ver criarBlocoListaColapsavel). Os botões de ação
+    // em massa acima (Pagar/Receber Tudo, Desfazer Pagamento da Fatura) continuam
+    // sempre visíveis e funcionais independente deste estado.
+    const { btnToggle: btnToggleSubLista, lista: subLista } = criarBlocoListaColapsavel();
 
     (itens || []).forEach(it => {
       const sub = document.createElement("li");
@@ -673,12 +711,10 @@ export function initTelaMes({ categorias, uid }) {
       sub.appendChild(acoesDiv);
       subLista.appendChild(sub);
     });
+    finalizarListaColapsavel(btnToggleSubLista, subLista, (itens || []).length);
 
-    item.appendChild(painelDetalhes);
-
-    linhaPrincipal.addEventListener("click", () => {
-      painelDetalhes.style.display = painelDetalhes.style.display === "none" ? "block" : "none";
-    });
+    item.appendChild(btnToggleSubLista);
+    item.appendChild(subLista);
 
     return item;
   }

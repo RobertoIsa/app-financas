@@ -540,6 +540,35 @@ section + section {
   margin: 0.5rem 0 0;
 }
 
+/* Recolhimento de listas de itens individuais nos grupos da aba "Mês" (Receitas, Faturas
+   de Cartão, Despesas à Vista) — mesmo padrão visual das Caixinhas (.caixinha-lista*),
+   mas UNIVERSAL (desktop + mobile), de propósito: diferente das Caixinhas (onde o
+   problema de volume só aparecia no mobile, com os painéis lado a lado no desktop),
+   aqui o volume de devedores/categorias/faturas é um problema nos dois tamanhos de
+   tela, então não existe um @media que desfaça o recolhimento. */
+.mes-grupo-lista-toggle {
+  align-self: flex-start;
+  margin-top: 0.5rem;
+}
+
+.mes-grupo-lista {
+  list-style: none;
+  margin: 0.25rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.mes-grupo-lista.mes-grupo-lista-fechada {
+  display: none;
+}
+
+.mes-grupo-lista:not(.mes-grupo-lista-fechada) {
+  max-height: 320px;
+  overflow-y: auto;
+}
+
 .checkbox-label {
   display: flex;
   align-items: center;
