@@ -89,6 +89,9 @@ export function initTelaCaixinhas({ categorias, membros, uid }) {
   const btnAnterior = document.getElementById("caixinhas-mesnav-anterior");
   const btnProximo = document.getElementById("caixinhas-mesnav-proximo");
   const btnHoje = document.getElementById("caixinhas-mesnav-hoje");
+  const totalLimiteEl = document.getElementById("caixinhas-total-limite");
+  const totalGastoEl = document.getElementById("caixinhas-total-gasto");
+  const totalSaldoEl = document.getElementById("caixinhas-total-saldo");
 
   const categoriasCache = categorias || [];
   let mesSelecionado = mesDeData(dataHojeISO());
@@ -389,6 +392,12 @@ export function initTelaCaixinhas({ categorias, membros, uid }) {
         (l) => mesAlvoCaixinha(l) === mesDaCarga
       );
 
+      // Totalizador (ver CLAUDE.md "Caixinhas"): soma dos dois painéis, acumulada aqui
+      // dentro do mesmo loop pra reaproveitar limiteCentavos/gasto já calculados pra cada
+      // pessoa — sem refazer nenhuma consulta/filtro.
+      let totalLimiteCentavos = 0;
+      let totalGastoCentavos = 0;
+
       pessoas.forEach((pessoa, indice) => {
         const ref = refs[pessoa.chave];
         if (!ref) return;
@@ -422,6 +431,9 @@ export function initTelaCaixinhas({ categorias, membros, uid }) {
         const saldo = limiteCentavos - gasto;
         const estourou = saldo < 0;
 
+        totalLimiteCentavos += limiteCentavos;
+        totalGastoCentavos += gasto;
+
         ref.limiteValor.textContent = formatCentavos(limiteCentavos);
         ref.gastoValor.textContent = formatCentavos(gasto);
         ref.saldoValor.textContent = formatCentavos(saldo);
@@ -443,6 +455,15 @@ export function initTelaCaixinhas({ categorias, membros, uid }) {
 
         renderLista(ref.lista, candidatos, ref.btnToggleLista);
       });
+
+      const totalSaldoCentavos = totalLimiteCentavos - totalGastoCentavos;
+      if (totalLimiteEl) totalLimiteEl.textContent = formatCentavos(totalLimiteCentavos);
+      if (totalGastoEl) totalGastoEl.textContent = formatCentavos(totalGastoCentavos);
+      if (totalSaldoEl) {
+        totalSaldoEl.textContent = formatCentavos(totalSaldoCentavos);
+        totalSaldoEl.classList.toggle("lanc-despesa", totalSaldoCentavos < 0);
+        totalSaldoEl.classList.toggle("lanc-receita", totalSaldoCentavos > 0);
+      }
     } catch (erro) {
       console.error("Erro ao carregar as caixinhas:", erro);
       if (meuPedido !== pedidoAtual) return;

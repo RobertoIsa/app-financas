@@ -626,9 +626,12 @@ exportado (ex.: `caixa-2026-09.xlsx`).
     e a origem de cada um (despesa imediata, pagamento de fatura, receita, baixa de
     recebível, recorrência paga). Não confundir com o "Saldo do Mês"/"Saldo Projetado"
     (que são por mês); este é o total acumulado desde o início do uso.
-11. **Caixinhas** — painel por pessoa (Roberto/Esposa): limite do mês (editável pelo
-    casal), lista dos gastos não-recorrentes do mês que consumiram saldo, e saldo
-    restante. Reseta todo mês; calculado na hora, sem contador persistido.
+11. **Caixinhas** — navegador de mês (passado/atual, sem futuro) + um **totalizador** no
+    topo (soma dos dois painéis: limite total, gasto total, saldo total), seguido dos
+    painéis por pessoa (Roberto/Esposa): limite do mês (editável pelo casal), lista dos
+    gastos não-recorrentes do mês que consumiram saldo, e saldo restante. Reseta todo mês;
+    calculado na hora, sem contador persistido. Eixo por parcela (ver regra refinada
+    acima), não aplica à aba Mês/Dashboard/Excel.
 12. **Observações** — texto livre por usuário (`/observacoes/{uid}`), sem vínculo a mês.
 13. **Ajustes** — exportar backup, tema, gerenciar membros (admin).
 
