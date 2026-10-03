@@ -426,8 +426,15 @@ ligados por `idReembolso` e ao `origemIdCompra`.
 - **Pendente ≠ receita.** Enquanto `status = "pendente"`, o valor NÃO é receita — aparece
   só como "entrada prevista" na projeção e no painel "A Receber". Na **baixa**
   (`status = "recebido"`), gera uma receita real em `/lancamentos` (categoria
-  `recebimentos_terceiros`) no mês em que o dinheiro caiu.
+  `recebimentos_terceiros`) no **mês escolhido pelo usuário na hora de confirmar**.
 - Evita dinheiro fantasma: nunca infla a receita antes de o valor existir.
+- **Baixa: escolha de MÊS, não de data exata (revisão).** Ao confirmar "Receber", o
+  usuário escolhe apenas o **mês** do recebimento (não um dia específico) — pré-selecionado
+  com o `mesEsperado` do recebível, editável para outro mês se o dinheiro realmente caiu em
+  época diferente. Esse mês determina `mes`/`mesDesembolso` da receita gerada. Motivo da
+  mudança: um campo de data livre, com "hoje" como padrão, fazia confirmações atrasadas
+  (ex.: recebível esperado em setembro, só confirmado em outubro) caírem silenciosamente no
+  mês errado sem o usuário perceber — escolher o mês de propósito evita esse deslize.
 
 ### Recorrência (contas e receitas mensais)
 Itens que se repetem todo mês (salário, aluguel, assinaturas). **Método: regra + projeção

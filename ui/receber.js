@@ -9,7 +9,7 @@ import {
   marcarRecebivelRecebido,
   desfazerRecebimento
 } from "../db.js";
-import { formatCentavos, dataHojeISO } from "../logic.js";
+import { formatCentavos } from "../logic.js";
 
 function formatarMesLabel(mesISO) {
   const [ano, mes] = mesISO.split("-").map(Number);
@@ -83,12 +83,17 @@ export function initTelaReceber({ uid }) {
     });
   }
 
+  // Mês do recebimento, NÃO uma data exata (ver CLAUDE.md "Crédito a receber", "Baixa:
+  // escolha de MÊS, não de data exata"): pré-selecionado com o mesEsperado do recebível,
+  // editável pra outro mês se o dinheiro realmente caiu em época diferente. Um campo de
+  // data livre com "hoje" como padrão fazia confirmações atrasadas (recebível esperado em
+  // setembro, só confirmado em outubro) caírem silenciosamente no mês errado.
   function alternarFormRecebimento(item, recebivel) {
     alternarFormInline(item, "recebivel-edicao-baixa", (form) => {
-      const campoData = document.createElement("input");
-      campoData.type = "date";
-      campoData.value = dataHojeISO();
-      campoData.setAttribute("aria-label", "Data do recebimento");
+      const campoMes = document.createElement("input");
+      campoMes.type = "month";
+      campoMes.value = recebivel.mesEsperado;
+      campoMes.setAttribute("aria-label", "Mês do recebimento");
 
       const btnConfirmar = document.createElement("button");
       btnConfirmar.type = "submit";
@@ -105,21 +110,21 @@ export function initTelaReceber({ uid }) {
       erro.className = "erro";
       erro.setAttribute("role", "alert");
 
-      form.appendChild(campoData);
+      form.appendChild(campoMes);
       form.appendChild(btnConfirmar);
       form.appendChild(btnCancelar);
       form.appendChild(erro);
 
       form.addEventListener("submit", async (evento) => {
         evento.preventDefault();
-        if (!campoData.value) {
-          erro.textContent = "Informe a data do recebimento.";
+        if (!campoMes.value) {
+          erro.textContent = "Informe o mês do recebimento.";
           return;
         }
         btnConfirmar.disabled = true;
         btnConfirmar.textContent = "Confirmando...";
         try {
-          await marcarRecebivelRecebido(recebivel, campoData.value, uid);
+          await marcarRecebivelRecebido(recebivel, campoMes.value, uid);
           await carregar();
         } catch (err) {
           erro.textContent = `Erro ao confirmar: ${err.message || err.code || "erro desconhecido"}`;

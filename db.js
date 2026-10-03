@@ -26,7 +26,7 @@ import {
   runTransaction
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-database.js";
 import { firebaseConfig } from "./firebase-config.js";
-import { calcularCascata, mesDeData, lancamentoMoveCaixa, origemCaixaDoLancamento } from "./logic.js";
+import { calcularCascata, dataHojeISO, lancamentoMoveCaixa, origemCaixaDoLancamento } from "./logic.js";
 
 const app = initializeApp(firebaseConfig);
 
@@ -289,15 +289,27 @@ export async function obterResponsavelPorUid(uid) {
 // (mesmo padrão da Leva 1 — ver excluirLancamento/pagarFaturaEmLote), registra a entrada
 // no Caixa: a baixa é dinheiro caindo de verdade (ver CLAUDE.md "Caixa (saldo acumulado
 // real)").
-export async function marcarRecebivelRecebido(recebivel, dataRecebidoISO, uid) {
+//
+// `mesRecebimento` (YYYY-MM) — NÃO uma data exata (ver CLAUDE.md "Crédito a receber",
+// "Baixa: escolha de MÊS, não de data exata"): a UI (ui/receber.js, ui/mes.js) só deixa
+// escolher o mês, pré-selecionado com `recebivel.mesEsperado`, editável. Um campo de data
+// livre com "hoje" como padrão fazia confirmações atrasadas (recebível esperado em
+// setembro, só confirmado em outubro) caírem silenciosamente no mês errado. `mes` e
+// `mesDesembolso` da receita vêm desse mês escolhido; o dia 1 é usado como "data" só
+// porque o schema de /lancamentos exige um campo `data`, sem precisão de dia alguma —
+// toda a UI trabalha por mês. `dataRecebido` (auditoria em /receber) continua sendo o
+// timestamp REAL da confirmação (hoje), separado do mês da receita — só histórico, não
+// editável pelo usuário.
+export async function marcarRecebivelRecebido(recebivel, mesRecebimento, uid) {
   const agora = Date.now();
+  const dataRecebido = dataHojeISO();
   const responsavel = await obterResponsavelPorUid(uid);
   const novaReceitaRef = push(ref(db, "lancamentos"));
   const receita = {
     tipo: "receita",
-    data: dataRecebidoISO,
-    mes: mesDeData(dataRecebidoISO),
-    mesDesembolso: mesDeData(dataRecebidoISO),
+    data: `${mesRecebimento}-01`,
+    mes: mesRecebimento,
+    mesDesembolso: mesRecebimento,
     valorCentavos: recebivel.valorCentavos,
     descricao: `Recebimento de ${recebivel.devedor}`,
     categoriaId: "recebimentos_terceiros",
@@ -315,7 +327,7 @@ export async function marcarRecebivelRecebido(recebivel, dataRecebidoISO, uid) {
   const atualizacoes = {
     [`lancamentos/${novaReceitaRef.key}`]: receita,
     [`receber/${recebivel.id}/status`]: "recebido",
-    [`receber/${recebivel.id}/dataRecebido`]: dataRecebidoISO,
+    [`receber/${recebivel.id}/dataRecebido`]: dataRecebido,
     [`receber/${recebivel.id}/lancamentoReceitaId`]: novaReceitaRef.key,
     [`receber/${recebivel.id}/atualizadoEm`]: agora
   };

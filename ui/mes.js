@@ -94,30 +94,32 @@ export function initTelaMes({ categorias, uid }) {
     return `${cat.nome}${cat.icone ? " " + cat.icone : ""}`;
   }
 
-  // Abre (ou fecha, se já aberto) um mini-formulário inline pedindo a data do
-  // recebimento, pro botão "Receber" individual de um item de /receber dentro da
-  // seção "Recebimentos de Terceiros" — mesmo fluxo/UX da aba "A Receber"
-  // (ver ui/receber.js alternarFormRecebimento), só que reaproveitado aqui em vez de
-  // chamar atualizarLancamento (que era o bug: um recebível não é um /lancamentos).
-  function alternarFormRecebimentoIndividual(subReferencia, recebivel) {
-    const existente = subReferencia.nextElementSibling;
-    if (existente && existente.dataset && existente.dataset.formRecebivel === recebivel.id) {
+  // Abre (ou fecha, se já aberto) um mini-formulário inline pedindo o MÊS do recebimento
+  // — nunca uma data livre (ver CLAUDE.md "Crédito a receber", "Baixa: escolha de MÊS,
+  // não de data exata"): um campo de data livre com "hoje" como padrão fazia confirmações
+  // atrasadas (recebível esperado em setembro, só confirmado em outubro) caírem
+  // silenciosamente no mês errado. Reaproveitado tanto pelo botão "Receber" individual
+  // quanto pelo "Receber Tudo" por devedor, pra nunca existir um segundo caminho que peça
+  // uma data em vez de um mês.
+  function abrirFormMesRecebimento(ancora, { chave, mesPadrao, onConfirmar }) {
+    const existente = ancora.nextElementSibling;
+    if (existente && existente.dataset && existente.dataset.formRecebivel === chave) {
       existente.remove();
       return;
     }
 
     const formLi = document.createElement("li");
-    formLi.dataset.formRecebivel = recebivel.id;
+    formLi.dataset.formRecebivel = chave;
     formLi.style.display = "flex";
     formLi.style.flexDirection = "column";
     formLi.style.gap = "8px";
     formLi.style.padding = "8px 0";
     formLi.style.borderBottom = "1px solid var(--fundo)";
 
-    const campoData = document.createElement("input");
-    campoData.type = "date";
-    campoData.value = dataHojeISO();
-    campoData.setAttribute("aria-label", "Data do recebimento");
+    const campoMes = document.createElement("input");
+    campoMes.type = "month";
+    campoMes.value = mesPadrao;
+    campoMes.setAttribute("aria-label", "Mês do recebimento");
 
     const linhaBotoes = document.createElement("div");
     linhaBotoes.style.display = "flex";
@@ -144,14 +146,14 @@ export function initTelaMes({ categorias, uid }) {
 
     btnConfirmar.onclick = async (e) => {
       e.stopPropagation();
-      if (!campoData.value) {
-        erro.textContent = "Informe a data do recebimento.";
+      if (!campoMes.value) {
+        erro.textContent = "Informe o mês do recebimento.";
         return;
       }
       btnConfirmar.disabled = true;
       btnConfirmar.textContent = "Confirmando...";
       try {
-        await marcarRecebivelRecebido(recebivel, campoData.value, uid);
+        await onConfirmar(campoMes.value);
         await carregar();
       } catch (erroRequisicao) {
         erro.textContent = `Erro: ${erroRequisicao.message || erroRequisicao.code || "erro desconhecido"}`;
@@ -162,11 +164,23 @@ export function initTelaMes({ categorias, uid }) {
 
     linhaBotoes.appendChild(btnConfirmar);
     linhaBotoes.appendChild(btnCancelar);
-    formLi.appendChild(campoData);
+    formLi.appendChild(campoMes);
     formLi.appendChild(linhaBotoes);
     formLi.appendChild(erro);
 
-    subReferencia.after(formLi);
+    ancora.after(formLi);
+  }
+
+  // Botão "Receber" individual de um item de /receber dentro da seção "Recebimentos de
+  // Terceiros" — mesmo fluxo/UX da aba "A Receber" (ver ui/receber.js
+  // alternarFormRecebimento), só que reaproveitado aqui em vez de chamar
+  // atualizarLancamento (que era o bug: um recebível não é um /lancamentos).
+  function alternarFormRecebimentoIndividual(subReferencia, recebivel) {
+    abrirFormMesRecebimento(subReferencia, {
+      chave: recebivel.id,
+      mesPadrao: recebivel.mesEsperado,
+      onConfirmar: (mes) => marcarRecebivelRecebido(recebivel, mes, uid)
+    });
   }
 
   // Cria o botão "Desfazer" (ou o aviso de fallback) pra uma receita gerada por baixa de
@@ -287,21 +301,22 @@ export function initTelaMes({ categorias, uid }) {
         btnReceberTudoDevedor.type = "button";
         btnReceberTudoDevedor.textContent = "Receber Tudo";
         btnReceberTudoDevedor.className = "botao-secundario botao-pequeno";
-        btnReceberTudoDevedor.onclick = async (e) => {
+        btnReceberTudoDevedor.onclick = (e) => {
           e.stopPropagation();
-          btnReceberTudoDevedor.disabled = true;
-          btnReceberTudoDevedor.textContent = "...";
-          try {
-            // Mesma função usada pelo botão individual e pela aba "A Receber" — chamada
-            // uma vez por item SÓ deste devedor (itensDevedor), nunca os de outro devedor
-            // do mesmo grupo. Data de hoje pra todos, igual ao "Pagar Tudo" já existente.
-            await Promise.all(itensDevedor.map((r) => marcarRecebivelRecebido(r, dataHojeISO(), uid)));
-            await carregar();
-          } catch (erro) {
-            alert("Erro ao receber: " + erro.message);
-            btnReceberTudoDevedor.disabled = false;
-            btnReceberTudoDevedor.textContent = "Receber Tudo";
-          }
+          // Mesmo seletor de MÊS do botão individual (abrirFormMesRecebimento) — nunca
+          // uma data livre. Pré-seleciona o mesEsperado mais antigo do grupo (parcelas
+          // deste devedor podem ter mesEsperado diferentes); o usuário pode trocar antes
+          // de confirmar. onConfirmar chama marcarRecebivelRecebido uma vez SÓ pelos
+          // itens deste devedor (itensDevedor), nunca os de outro devedor do mesmo grupo.
+          const mesPadrao = itensDevedor.reduce(
+            (menor, r) => (r.mesEsperado < menor ? r.mesEsperado : menor),
+            itensDevedor[0].mesEsperado
+          );
+          abrirFormMesRecebimento(linhaDevedor, {
+            chave: `devedor-${devedor}`,
+            mesPadrao,
+            onConfirmar: (mes) => Promise.all(itensDevedor.map((r) => marcarRecebivelRecebido(r, mes, uid)))
+          });
         };
         linhaDevedor.appendChild(btnReceberTudoDevedor);
         blocoDevedor.appendChild(linhaDevedor);
