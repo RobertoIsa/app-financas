@@ -16,11 +16,23 @@ import {
   formatCentavos,
   dataHojeISO,
   mesDeData,
+  somarMeses,
   gerarParcelas,
   gerarRecebiveis,
   lancamentoMoveCaixa,
   resolverResponsavelPorUid
 } from "../logic.js";
+
+const NOMES_MES = [
+  "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+  "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
+];
+
+function formatarMes(mesISO) {
+  if (!mesISO) return "";
+  const [ano, mes] = mesISO.split("-").map(Number);
+  return `${NOMES_MES[mes - 1]} ${ano}`;
+}
 
 export function initTelaLancamento({ categorias, membros, cartoes, uid, irParaCartoes }) {
   const formLancamento = document.getElementById("form-lancamento");
@@ -45,6 +57,16 @@ export function initTelaLancamento({ categorias, membros, cartoes, uid, irParaCa
 
   const mesStatus = document.getElementById("mes-status");
   const listaLancamentos = document.getElementById("lista-lancamentos");
+  const lancMesnavAnterior = document.getElementById("lancamento-mesnav-anterior");
+  const lancMesnavProximo = document.getElementById("lancamento-mesnav-proximo");
+  const lancMesnavHoje = document.getElementById("lancamento-mesnav-hoje");
+  const lancMesnavLabel = document.getElementById("lancamento-mesnav-label");
+
+  // Mês exibido na lista "Lançamentos do mês" — navegação livre (passado ou futuro, sem
+  // restrição: é só visualização, diferente da Caixinha que trava no mês atual). O
+  // formulário de lançar continua sempre salvando com a data escolhida nele, independente
+  // deste mês de visualização.
+  let mesListaSelecionado = mesDeData(dataHojeISO());
 
   let categoriasCache = categorias || [];
   let membrosCache = membros || [];
@@ -379,10 +401,11 @@ export function initTelaLancamento({ categorias, membros, cartoes, uid, irParaCa
   }
 
   async function carregarLancamentosDoMes() {
+    const mes = mesListaSelecionado;
+    if (lancMesnavLabel) lancMesnavLabel.textContent = formatarMes(mes);
     mesStatus.textContent = "Carregando lançamentos do mês...";
     listaLancamentos.innerHTML = "";
     try {
-      const mes = mesDeData(dataHojeISO());
       const lancamentos = await lerLancamentosDoMes(mes);
       if (lancamentos.length === 0) {
         mesStatus.textContent = "Nenhum lançamento neste mês ainda.";
@@ -397,6 +420,21 @@ export function initTelaLancamento({ categorias, membros, cartoes, uid, irParaCa
       mesStatus.textContent = `Erro ao carregar lançamentos: ${erro.message || erro.code || "erro desconhecido"}`;
     }
   }
+
+  function navegarListaPara(mes) {
+    mesListaSelecionado = mes;
+    carregarLancamentosDoMes();
+  }
+
+  if (lancMesnavAnterior) lancMesnavAnterior.addEventListener("click", () => {
+    navegarListaPara(somarMeses(mesListaSelecionado, -1));
+  });
+  if (lancMesnavProximo) lancMesnavProximo.addEventListener("click", () => {
+    navegarListaPara(somarMeses(mesListaSelecionado, 1));
+  });
+  if (lancMesnavHoje) lancMesnavHoje.addEventListener("click", () => {
+    navegarListaPara(mesDeData(dataHojeISO()));
+  });
 
   // Best-effort: se o movimento de caixa falhar, o lançamento em si já foi salvo com
   // sucesso — não faz sentido mostrar "Erro ao salvar" pro usuário quando o que falhou

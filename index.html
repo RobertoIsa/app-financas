@@ -143,6 +143,12 @@
 
       <section aria-labelledby="mes-titulo">
         <h2 id="mes-titulo">Lançamentos do mês</h2>
+        <div class="mes-nav">
+          <button type="button" id="lancamento-mesnav-anterior" aria-label="Mês anterior">‹</button>
+          <span id="lancamento-mesnav-label" class="mes-nav-label" aria-live="polite"></span>
+          <button type="button" id="lancamento-mesnav-proximo" aria-label="Próximo mês">›</button>
+        </div>
+        <button type="button" id="lancamento-mesnav-hoje" class="botao-secundario botao-pequeno">Ir para hoje</button>
         <p id="mes-status" role="status" aria-live="polite"></p>
         <ul id="lista-lancamentos"></ul>
       </section>
