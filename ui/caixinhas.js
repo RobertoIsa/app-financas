@@ -365,17 +365,21 @@ export function initTelaCaixinhas({ categorias, membros, uid }) {
         });
       });
 
-      // "Mês alvo" na Caixinha (ver CLAUDE.md "Caixinhas", regra de eixo refinada — só
-      // vale aqui, a aba Mês continua sempre em desembolso sem exceção):
-      //  - Compra PARCELADA no crédito (totalParcelas > 1): mesDesembolso — cada parcela
-      //    conta só no mês em que a fatura dela vence, nunca a compra inteira de uma vez.
-      //  - Compra À VISTA no crédito (totalParcelas ausente ou = 1): mes (competência) —
-      //    uma compra feita no fim do mês, cuja fatura só vence no mês seguinte, ainda
-      //    assim consome a caixinha do mês em que foi feita.
+      // "Mês alvo" na Caixinha (ver CLAUDE.md "Caixinhas", regra de eixo re-refinada POR
+      // NÚMERO DA PARCELA — só vale aqui, a aba Mês continua sempre em desembolso puro,
+      // sem exceção nenhuma):
+      //  - parcelaAtual === 1 (ausente trata como 1 — compra à vista): mes (competência)
+      //    — a 1ª parcela de QUALQUER compra no crédito (à vista ou parcelada) conta
+      //    sempre no mês em que a compra foi feita, mesmo que a fatura daquele ciclo já
+      //    tenha fechado e ela "vença" só no mês seguinte.
+      //  - parcelaAtual > 1 (2ª parcela em diante): mesDesembolso — cada parcela
+      //    subsequente conta no mês em que a fatura DELA vence. Ex.: compra 3x em 30/09
+      //    → 1ª na Caixinha de setembro, 2ª na de outubro, 3ª na de novembro.
       //  - Dinheiro/débito/pix/transferência: mes (competência) — mes === mesDesembolso
       //    sempre pra esses meios, então dá no mesmo.
       function mesAlvoCaixinha(l) {
-        if (l.meioPagamento === "credito" && l.totalParcelas > 1) {
+        const parcela = l.parcelaAtual || 1;
+        if (parcela > 1) {
           return obterMesDesembolso(l);
         }
         return l.mes;

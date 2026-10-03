@@ -56,19 +56,24 @@ lançamentos daquele mês.
 - **Entra no cálculo da caixinha de uma pessoa:** despesas dela (`responsavel` = a pessoa)
   que sejam **não-recorrentes** (`idRecorrencia` ausente) — os gastos soltos do dia a dia
   (Restaurantes, Lazer, uma compra qualquer).
-- **Eixo usado (regra refinada, só vale dentro da Caixinha — a aba Mês continua sempre em
-  desembolso, sem exceção):**
-  - **Compra parcelada no crédito** (`totalParcelas > 1`): usa **desembolso**
-    (`mesDesembolso`) — cada parcela conta no mês em que a fatura dela vence. Motivo
-    original: todas as parcelas compartilham o mesmo `mes` (a data da compra); usar
-    competência faria a compra inteira consumir o limite do mês da compra de uma vez.
-  - **Compra à vista no crédito** (`totalParcelas` ausente ou `= 1`): usa **competência**
-    (`mes` — mês da compra), **não** desembolso. Motivo: sem parcelamento não existe o
-    problema de "consumir tudo de uma vez"; contar pela fatura confundia o usuário quando
-    uma compra de fim de mês caía na fatura do mês seguinte por causa do fechamento do
-    cartão — ele queria ver o gasto no mês em que decidiu fazê-lo.
-  - **Dinheiro/débito/pix/transferência:** `mes === mesDesembolso` sempre (imediato), então
-    não há ambiguidade — usa qualquer um dos dois, dá no mesmo.
+- **Eixo usado (regra refinada por NÚMERO DA PARCELA, só vale dentro da Caixinha — a aba
+  Mês continua sempre em desembolso puro, sem exceção nenhuma):**
+  - **`parcelaAtual === 1`** (1ª parcela de qualquer compra no crédito — à vista ou
+    parcelada): usa **competência** (`mes` — mês da compra), **nunca** desembolso. Vale
+    mesmo que o cartão já tivesse fechado a fatura daquele ciclo e a 1ª parcela "vença" só
+    no mês seguinte — para a Caixinha, a 1ª parcela é sempre contada no mês em que a
+    compra foi decidida/feita.
+  - **`parcelaAtual > 1`** (2ª parcela em diante): usa **desembolso** (`mesDesembolso`) —
+    cada parcela subsequente conta no mês em que a fatura dela vence. Exemplo: compra
+    parcelada em 3x feita em 30/09 → 1ª parcela na Caixinha de setembro, 2ª na de outubro,
+    3ª na de novembro, cada uma no seu mês, nunca todas de uma vez.
+  - **Dinheiro/débito/pix/transferência:** `mes === mesDesembolso` sempre (imediato), não
+    há ambiguidade.
+  - Motivo da regra inteira: sem isso, uma compra parcelada inteira "pesaria" no mês da
+    compra de uma vez (problema original que motivou usar desembolso) — mas forçar
+    *tudo* pro eixo desembolso também distorcia a 1ª parcela de compras à vista/parceladas
+    para o mês errado quando feitas perto do fechamento do cartão. A regra por nº de
+    parcela resolve os dois problemas ao mesmo tempo.
 - **Não entra:** despesas com `idRecorrencia` preenchido (essas têm limite próprio, fora da
   caixinha), receitas, e — por decisão de que "casal" deixou de existir — nada fica "de
   fora" por ambiguidade de responsável.
