@@ -337,12 +337,14 @@ export function initTelaCaixinhas({ categorias, membros, uid }) {
     if (statusEl) statusEl.textContent = "Carregando...";
 
     try {
-      // Eixo DESEMBOLSO. Mesma estratégia da aba "Mês" pra tolerar lançamentos antigos
-      // sem `mesDesembolso` gravado: junta 3 fontes por id e resolve cada um com
-      // obterMesDesembolso (fallback: faturaMes || mes).
-      //  - lerLancamentosPorMesDesembolso: registros com o campo já preenchido;
-      //  - lerLancamentosDoMes (competência): pega os não-crédito antigos, onde
-      //    desembolso == mes (o obterMesDesembolso confirma);
+      // Fontes combinadas, mesma estratégia da aba "Mês" pra tolerar lançamentos antigos
+      // sem `mesDesembolso` gravado: junta 4 fontes por id.
+      //  - lerLancamentosPorMesDesembolso: registros com o campo já preenchido, cobre as
+      //    parcelas de compra parcelada cujo vencimento cai no mês selecionado;
+      //  - lerLancamentosDoMes (competência): cobre TUDO cuja compra/competência é o mês
+      //    selecionado — inclui compra à vista no crédito cuja fatura só vence no mês
+      //    seguinte (ver regra do "mês alvo" abaixo) e os não-crédito antigos (onde
+      //    desembolso == mes sempre);
       //  - lerLancamentosPorFaturaMes (mês atual e o anterior): pega parcelas de crédito
       //    antigas sem `mesDesembolso` — o desembolso só pode ser o próprio faturaMes ou
       //    o mês seguinte, então essas duas consultas cobrem todo candidato.
@@ -362,10 +364,25 @@ export function initTelaCaixinhas({ categorias, membros, uid }) {
           if (l && l.id && !porId.has(l.id)) porId.set(l.id, l);
         });
       });
-      // Cada parcela é um /lancamentos próprio com seu mesDesembolso — este filtro deixa
-      // passar só a parcela cujo vencimento cai no mês selecionado, nunca a compra inteira.
+
+      // "Mês alvo" na Caixinha (ver CLAUDE.md "Caixinhas", regra de eixo refinada — só
+      // vale aqui, a aba Mês continua sempre em desembolso sem exceção):
+      //  - Compra PARCELADA no crédito (totalParcelas > 1): mesDesembolso — cada parcela
+      //    conta só no mês em que a fatura dela vence, nunca a compra inteira de uma vez.
+      //  - Compra À VISTA no crédito (totalParcelas ausente ou = 1): mes (competência) —
+      //    uma compra feita no fim do mês, cuja fatura só vence no mês seguinte, ainda
+      //    assim consome a caixinha do mês em que foi feita.
+      //  - Dinheiro/débito/pix/transferência: mes (competência) — mes === mesDesembolso
+      //    sempre pra esses meios, então dá no mesmo.
+      function mesAlvoCaixinha(l) {
+        if (l.meioPagamento === "credito" && l.totalParcelas > 1) {
+          return obterMesDesembolso(l);
+        }
+        return l.mes;
+      }
+
       const lancamentosDoMes = [...porId.values()].filter(
-        (l) => obterMesDesembolso(l) === mesDaCarga
+        (l) => mesAlvoCaixinha(l) === mesDaCarga
       );
 
       pessoas.forEach((pessoa, indice) => {

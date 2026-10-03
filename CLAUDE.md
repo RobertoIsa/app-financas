@@ -55,12 +55,20 @@ lançamentos daquele mês.
 
 - **Entra no cálculo da caixinha de uma pessoa:** despesas dela (`responsavel` = a pessoa)
   que sejam **não-recorrentes** (`idRecorrencia` ausente) — os gastos soltos do dia a dia
-  (Restaurantes, Lazer, uma compra qualquer). Usa o eixo **desembolso** (`mesDesembolso`),
-  **não** competência (`mes`). **Motivo da correção:** todas as parcelas de uma compra
-  parcelada compartilham o mesmo `mes` (a data da compra); usar competência faria a compra
-  inteira consumir o limite do mês da compra de uma vez, mesmo o impacto real estando
-  espalhado pelas faturas seguintes. Com desembolso, cada parcela conta no mês em que
-  realmente vai pesar no bolso — consistente com o eixo principal do resto do app.
+  (Restaurantes, Lazer, uma compra qualquer).
+- **Eixo usado (regra refinada, só vale dentro da Caixinha — a aba Mês continua sempre em
+  desembolso, sem exceção):**
+  - **Compra parcelada no crédito** (`totalParcelas > 1`): usa **desembolso**
+    (`mesDesembolso`) — cada parcela conta no mês em que a fatura dela vence. Motivo
+    original: todas as parcelas compartilham o mesmo `mes` (a data da compra); usar
+    competência faria a compra inteira consumir o limite do mês da compra de uma vez.
+  - **Compra à vista no crédito** (`totalParcelas` ausente ou `= 1`): usa **competência**
+    (`mes` — mês da compra), **não** desembolso. Motivo: sem parcelamento não existe o
+    problema de "consumir tudo de uma vez"; contar pela fatura confundia o usuário quando
+    uma compra de fim de mês caía na fatura do mês seguinte por causa do fechamento do
+    cartão — ele queria ver o gasto no mês em que decidiu fazê-lo.
+  - **Dinheiro/débito/pix/transferência:** `mes === mesDesembolso` sempre (imediato), então
+    não há ambiguidade — usa qualquer um dos dois, dá no mesmo.
 - **Não entra:** despesas com `idRecorrencia` preenchido (essas têm limite próprio, fora da
   caixinha), receitas, e — por decisão de que "casal" deixou de existir — nada fica "de
   fora" por ambiguidade de responsável.
@@ -597,7 +605,10 @@ exportado (ex.: `caixa-2026-09.xlsx`).
    saídas previstas (desembolso), entradas previstas (receitas + recebíveis pendentes),
    **saldo projetado**; totais por categoria e **por pessoa** (Roberto/Esposa); idealmente
    uma faixa de vários meses à frente para ver a tendência.
-5. **Faturas** — fatura por cartão/`faturaMes`; pagar (baixa) e desfazer.
+5. **Faturas** — fatura por cartão/`faturaMes`; pagar (baixa) e desfazer. A seção
+   "Faturas de Cartão" da aba Mês também mostra, quando uma fatura está 100% paga, um
+   botão "Desfazer Pagamento da Fatura" que reverte tudo de uma vez (ver gap conhecido
+   sobre como ele identifica o lançamento a reverter).
 6. **A Receber** — créditos a receber por devedor: quanto cada um deve, o que está
    pendente por mês esperado, e botão de **baixa** (marcar recebido → vira receita).
 7. **Cartões** — cadastro in-app (CRUD): nome, dia de fechamento (1–31), dia de vencimento
@@ -686,36 +697,53 @@ baixa de recebível, recorrência paga), com estorno na exclusão e ajuste na ed
 nos caminhos individual e em lote ("Pagar Tudo"/"Receber Tudo"). Regras de segurança
 publicadas cobrindo lancamentos/receber/recorrencias/caixa.
 
+**Adicional, já implementado e validado:** remoção de "casal" (responsável sempre
+automático pela pessoa logada); Caixinhas (Roberto/Esposa) completas, com navegador de mês
+(histórico, sem ir ao futuro), eixo desembolso corrigido (parcela conta só no mês do
+vencimento, não todas no mês da compra), e toggle reversível `excluirDaCaixinha` por
+lançamento; layout mobile das Caixinhas com lista recolhível e rolagem própria; resumo da
+aba Mês redesenhado em dois quadros (Projeção do Mês / Caixa Real — ver seção própria
+acima), com "Despesas do Mês" corrigido para não oscilar conforme o usuário paga contas
+(soma tudo do mês, pago ou não, por desenho); exportação para Excel do mês selecionado
+(regime de caixa), com despesas negativas e receitas/recebíveis positivos; botão "Desfazer
+Pagamento da Fatura" direto na seção "Faturas de Cartão" quando 100% paga; ícones do PWA
+personalizados (design dourado); PWA testado e instalado em Android e iPhone.
+
 **Bugs reais encontrados e corrigidos ao longo do uso:** recorrência duplicando na
 materialização (corrigido com chave determinística + transação); recorrência nascia paga
 em vez de pendente; seção "Faturas de Cartão" da aba Mês buscava por competência em vez de
 `mesDesembolso`; projeção virtual de receita recorrente não alimentava a exibição em meses
 futuros; botão "Receber" individual na aba Mês causava reload por event bubbling (faltava
-stopPropagation); PERMISSION_DENIED por regras desatualizadas no console (resolvido
-republicando); "Desfazer" de recebível na aba Mês e o botão "Pagar" de recorrência tinham
-caminhos paralelos que não movimentavam o Caixa — ambos corrigidos unificando num único
-ponto de entrada (`desfazerRecebimento`, `marcarLancamentoPago`) em vez de lógica duplicada.
+stopPropagation); PERMISSION_DENIED por regras desatualizadas no console, repetido em
+`/recorrencias`, `/receber`, `/caixa`, `/caixinhas` e `/observacoes` (sempre resolvido
+republicando o bloco completo de regras — **tela nova sempre precisa de regra nova
+publicada antes de codar**); "Desfazer" de recebível na aba Mês e o botão "Pagar" de
+recorrência tinham caminhos paralelos que não movimentavam o Caixa; "Pagar Tudo" de fatura
+na aba Mês não chamava `pagarFaturaEmLote` (não movia o Caixa) — todos corrigidos
+unificando num único ponto de entrada em vez de lógica duplicada; recebíveis órfãos ao
+excluir todas as parcelas de uma compra para terceiro (corrigido: limpa `/receber`
+pendentes quando a última parcela do `idCompra` é excluída; itens já recebidos nunca são
+tocados); eixo da caixinha estava em competência em vez de desembolso (inflava o mês da
+compra parcelada inteira de uma vez).
 **Padrão recorrente identificado:** botões de atalho/lote ("Pagar Tudo", toggles genéricos)
 tendem a ficar desconectados de lógica nova adicionada só ao caminho individual — ao
 adicionar comportamento novo a uma ação, checar se existe caminho paralelo equivalente.
 
-**Próximos passos:**
-1. **Remover "casal"** de todo lugar que ainda oferece essa opção (formulário de
-   lançamento, formulário de recorrência) e tornar `responsavel` automático (pessoa
-   logada), como já registrado em Decisões. Pré-requisito das Caixinhas.
-2. **Caixinhas (Roberto/Esposa):** nó `/caixinhas` + regra já definida — **republicar as
-   regras no console antes de codar**. Implementar: tela de definir/editar limite mensal
-   por pessoa, painel calculado na hora (limite − soma de despesas não-recorrentes do
-   responsável naquele mês), lista dos lançamentos que consumiram saldo.
-3. **Testar instalação PWA no iPhone** (esposa) — ainda não confirmado; Android já validado.
-4. **Confirmar Caixinhas na conta da esposa:** verificar que os dois painéis
-   (Roberto/Esposa) aparecem iguais e compartilhados ao logar com a conta dela — esperado
-   pelo desenho (painel vem de /membros, comum aos dois), mas ainda não testado na prática.
-4. **Gap conhecido, não bloqueante:** "Receber Tudo"/"Pagar Tudo" em grupos com recebível ou
-   recorrência misturados a outros tipos pode não ajustar o Caixa para todos os itens —
-   revisar se aparecer na prática.
+**Gaps conhecidos, não bloqueantes:**
+- "Receber Tudo"/"Pagar Tudo" em grupos com recebível ou recorrência misturados a outros
+  tipos pode não ajustar o Caixa para todos os itens — revisar se aparecer na prática.
+- "Desfazer Pagamento da Fatura" identifica o lançamento a apagar por descrição+valor (o
+  registro não guarda `cartaoId`/`faturaMes`); em tese pode escolher o pagamento errado se
+  dois cartões tiverem fatura com valor idêntico no mesmo mês — raro, não resolvido.
+- Tela "Observações" existe e funciona (`/observacoes/{uid}`) mas nunca foi desenhada
+  formalmente antes de ser codada — documentada retroativamente ao corrigir seu
+  PERMISSION_DENIED.
+- Variável CSS `--texto-secundario` usada em `ui/mes.js` não existe em `styles.css` (a real
+  é `--cor-texto-suave`) — bug pré-existente, cosmético, não corrigido.
+- Rótulo "Valor da parcela" no crédito parcelado e melhorias no campo de data (fácil
+  esquecer de trocar o dia) seguem como ajustes finos não feitos.
 
-**Ajustes finos anotados:** rótulo "Valor da parcela" no crédito parcelado; melhorar o
-campo de data (fácil esquecer de trocar o dia); variável CSS `--texto-secundario` usada em
-ui/mes.js não existe em styles.css (a real é `--cor-texto-suave`) — bug pré-existente, não
-corrigido ainda.
+**Pendências de verificação (baixo risco):**
+- Confirmar Caixinhas na conta da esposa: verificar que os dois painéis (Roberto/Esposa)
+  aparecem iguais ao logar com a conta dela — esperado pelo desenho compartilhado, ainda
+  não confirmado visualmente por ela mesma.
