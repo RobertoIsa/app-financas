@@ -278,9 +278,9 @@ export function initTelaMes({ categorias, uid }) {
   // Tudo"/"Pagar Tudo" desconectado da lógica de caixa (já visto mais de uma vez).
   function criarItemRecebimentosTerceiros(titulo, total, pago, pendente, itens) {
     const item = document.createElement("li");
-    item.className = "lanc-item";
-    item.style.flexDirection = "column";
-    item.style.alignItems = "stretch";
+    // Card com borda — mesmo estilo visual de .caixinha-painel (ver styles.css
+    // .card-grupo), pra separar visualmente este grupo dos vizinhos na lista.
+    item.className = "card-grupo";
 
     // Cabeçalho (título + total) SEMPRE visível — não há mais um clique pra revelar os
     // números; só a lista de itens individuais abaixo é que se recolhe (ver CLAUDE.md,
@@ -329,8 +329,9 @@ export function initTelaMes({ categorias, uid }) {
       for (const [devedor, itensDevedor] of porDevedor) {
         const totalDevedor = itensDevedor.reduce((soma, r) => soma + r.valorCentavos, 0);
 
+        // Card aninhado por devedor — mesmo tratamento visual do grupo externo.
         const blocoDevedor = document.createElement("div");
-        blocoDevedor.style.marginBottom = "12px";
+        blocoDevedor.className = "card-grupo";
 
         // Cabeçalho do devedor (nome + total pendente + "Receber Tudo") SEMPRE visível —
         // só a lista de parcelas dele (abaixo) se recolhe.
@@ -455,9 +456,9 @@ export function initTelaMes({ categorias, uid }) {
   // "Padrão recorrente identificado").
   function criarItemAgrupado(titulo, total, pago, pendente, tipo, itens, faturaCtx) {
     const item = document.createElement("li");
-    item.className = "lanc-item";
-    item.style.flexDirection = "column";
-    item.style.alignItems = "stretch";
+    // Card com borda — mesmo estilo visual de .caixinha-painel (ver styles.css
+    // .card-grupo), pra separar visualmente este grupo dos vizinhos na lista.
+    item.className = "card-grupo";
 
     // Cabeçalho (título + total) SEMPRE visível — não há mais um clique pra revelar os
     // números/botões de ação; só a lista de lançamentos individuais abaixo é que se

@@ -836,18 +836,39 @@ section + section {
   gap: 1.25rem;
 }
 
+/* Estilo de card/borda compartilhado entre os painéis das Caixinhas (.caixinha-painel)
+   e os grupos da aba "Mês" (.card-grupo — cada devedor/fatura/categoria, ver
+   criarItemAgrupado/criarItemRecebimentosTerceiros em ui/mes.js), pra não duplicar CSS
+   entre os dois lugares que usam o mesmo tratamento visual. */
+.card-grupo,
 .caixinha-painel {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
-  /* Zera o "section + section { margin-top: 2rem }" global: os painéis são <section>
-     irmãos e o 2º herdava essa margem, desalinhando os cards no topo (lado a lado) e
-     inflando o espaço entre eles (empilhado). O espaçamento certo vem do gap da grid. */
-  margin: 0;
   background-color: var(--cor-card);
   border: 1px solid var(--cor-borda);
   border-radius: var(--raio);
   padding: 1rem;
+}
+
+.caixinha-painel {
+  /* Zera o "section + section { margin-top: 2rem }" global: os painéis são <section>
+     irmãos e o 2º herdava essa margem, desalinhando os cards no topo (lado a lado) e
+     inflando o espaço entre eles (empilhado). O espaçamento certo vem do gap da grid. */
+  margin: 0;
+}
+
+/* Diferente de .caixinha-painel (cujo espaçamento vem do gap da .caixinhas-grid), os
+   grupos da aba Mês são <li>/<div> empilhados sem gap do pai — cada card precisa da
+   própria margem inferior pra não ficarem colados um no outro. Sem destaque vermelho
+   por padrão (ver CLAUDE.md): a aba Mês não tem um conceito de "estourou" equivalente
+   ao das Caixinhas, então a cor fica neutra sempre. */
+.card-grupo {
+  margin: 0 0 0.75rem;
+}
+
+.card-grupo:last-child {
+  margin-bottom: 0;
 }
 
 .caixinha-painel-estourou {
