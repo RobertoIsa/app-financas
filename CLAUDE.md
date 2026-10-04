@@ -214,9 +214,13 @@ por mês agora — só quando/se crescer muito; ver "Arquivamento").
 
   # --- caixinhas ---
   excluirDaCaixinha: false,   # true = NÃO conta no cálculo da caixinha, mesmo sendo despesa
-                              # não-recorrente do responsável. Toggle reversível, editável
-                              # na própria tela Caixinhas. Não afeta nenhuma outra tela
-                              # (fatura, Caixa, A Receber) — só o filtro da caixinha.
+                              # não-recorrente do responsável. Definido de dois jeitos:
+                              # (1) na CRIAÇÃO, pelo checkbox "Contar na caixinha" do
+                              # formulário Lançar (marcado por padrão; desmarcar grava
+                              # true — vale para TODAS as parcelas geradas); (2) depois,
+                              # pelo toggle reversível da tela Caixinhas. Só aparece para
+                              # despesas. Não afeta nenhuma outra tela (fatura, Caixa,
+                              # A Receber) — só o filtro da caixinha.
 
   # --- auditoria ---
   criadoPor: "{uid}",

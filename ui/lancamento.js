@@ -50,6 +50,8 @@ export function initTelaLancamento({ categorias, membros, cartoes, uid, irParaCa
   const grupoTerceiro = document.getElementById("grupo-terceiro");
   const devedorInput = document.getElementById("lanc-devedor");
   const numRecebimentosInput = document.getElementById("lanc-num-recebimentos");
+  const campoContarCaixinha = document.getElementById("campo-contar-caixinha");
+  const checkboxContarCaixinha = document.getElementById("lanc-contar-caixinha");
   const dataInput = document.getElementById("lanc-data");
   const lancamentoErro = document.getElementById("lancamento-erro");
   const lancamentoSucesso = document.getElementById("lancamento-sucesso");
@@ -179,6 +181,7 @@ export function initTelaLancamento({ categorias, membros, cartoes, uid, irParaCa
       grupoParcelas.hidden = true;
       grupoTerceiro.hidden = true;
       campoParaTerceiro.hidden = true;
+      campoContarCaixinha.hidden = true;
       popularSelectCartao();
     } else {
       categoriaSelect.parentElement.hidden = false;
@@ -186,6 +189,9 @@ export function initTelaLancamento({ categorias, membros, cartoes, uid, irParaCa
       grupoParcelas.hidden = !isCredito;
       campoParaTerceiro.hidden = tipo !== "despesa";
       grupoTerceiro.hidden = !(tipo === "despesa" && checkboxParaTerceiro.checked);
+      // Caixinha só conta despesas (ver CLAUDE.md "excluirDaCaixinha") — some pra
+      // Receita, nunca grava o campo nesse caso.
+      campoContarCaixinha.hidden = tipo !== "despesa";
       popularSelectCategorias(tipo);
       if (isCredito) popularSelectCartao();
     }
@@ -628,6 +634,16 @@ export function initTelaLancamento({ categorias, membros, cartoes, uid, irParaCa
           criadoEm: agora
         });
 
+        // "Contar na caixinha" (ver CLAUDE.md "excluirDaCaixinha"): só existe pra
+        // despesa, e grava em TODAS as parcelas geradas (a caixinha conta cada
+        // parcela separadamente — ver ui/caixinhas.js, regra por parcelaAtual).
+        if (tipo === "despesa") {
+          const excluirDaCaixinha = !checkboxContarCaixinha.checked;
+          parcelas.forEach((parcela) => {
+            parcela.excluirDaCaixinha = excluirDaCaixinha;
+          });
+        }
+
         let recebiveis = [];
         if (paraTerceiro) {
           const idReembolso = `REEMB-${agora}`;
@@ -667,6 +683,12 @@ export function initTelaLancamento({ categorias, membros, cartoes, uid, irParaCa
           atualizadoEm: agora,
           pago: true
         };
+
+        // "Contar na caixinha" (ver CLAUDE.md "excluirDaCaixinha"): só existe pra
+        // despesa; pra receita o campo nem é gravado.
+        if (tipo === "despesa") {
+          lancamento.excluirDaCaixinha = !checkboxContarCaixinha.checked;
+        }
 
         let recebiveis = [];
         let idCriado;
