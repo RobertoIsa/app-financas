@@ -171,6 +171,25 @@ export async function lerLancamentosPorIdCompra(idCompra) {
   return Object.entries(dados).map(([id, valor]) => ({ id, ...valor }));
 }
 
+// Resolve a descrição da despesa de ORIGEM de um conjunto de idsCompra — usado pra
+// mostrar a descrição da compra junto de um recebível de /receber (que não tem campo de
+// descrição próprio, só `origemIdCompra`, ligando ao `idCompra` dos lançamentos de
+// despesa — ver CLAUDE.md "Crédito a receber"). Consulta cada idCompra DISTINTO uma
+// única vez, em paralelo (reaproveitando lerLancamentosPorIdCompra, já indexado) — nunca
+// uma consulta por linha de recebível. Helper reutilizável: pensado pra ui/mes.js
+// ("Recebimentos de Terceiros") e, depois, pela aba "A Receber" também.
+export async function resolverDescricoesPorIdCompra(idsCompra) {
+  const idsUnicos = [...new Set((idsCompra || []).filter(Boolean))];
+  const resultados = await Promise.all(
+    idsUnicos.map(async (idCompra) => {
+      const parcelas = await lerLancamentosPorIdCompra(idCompra);
+      const descricao = parcelas.find((p) => p.descricao)?.descricao || null;
+      return [idCompra, descricao];
+    })
+  );
+  return new Map(resultados.filter(([, descricao]) => descricao));
+}
+
 // Grava todas as parcelas de uma compra no crédito numa única operação atômica
 // (update multi-caminho — ver CLAUDE.md "Controle de concorrência"). Se idCompraExistente
 // for informado, apaga antes as parcelas antigas desse idCompra, para reeditar uma compra

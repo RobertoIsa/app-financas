@@ -16,7 +16,8 @@ import {
   desfazerRecebimento,
   pagarFaturaEmLote,
   atualizarLancamentoComData,
-  movimentarCaixa
+  movimentarCaixa,
+  resolverDescricoesPorIdCompra
 } from "../db.js";
 import {
   formatCentavos,
@@ -446,7 +447,26 @@ export function initTelaMes({ categorias, uid }) {
   // Reaproveita marcarRecebivelRecebido/desfazerRecebimento em todo caminho — nunca um
   // atualizarLancamento(id, {pago}) direto aqui, pra não reincidir no bug de "Receber
   // Tudo"/"Pagar Tudo" desconectado da lógica de caixa (já visto mais de uma vez).
-  function criarItemRecebimentosTerceiros(titulo, total, pago, pendente, itens) {
+  // Monta o texto de uma linha de recebível pendente, com a descrição da compra de
+  // origem quando resolvida (ver db.js resolverDescricoesPorIdCompra). Sem a descrição
+  // (despesa de origem não encontrada — ex.: excluída), cai no formato antigo, sem
+  // "undefined" nem quebra.
+  function formatarTextoRecebivelPendente(recebivel, descricoesPorIdCompra) {
+    const devedorTexto = recebivel.devedor || "Sem devedor";
+    const valorTexto = formatCentavos(recebivel.valorCentavos);
+    const descricao = descricoesPorIdCompra && recebivel.origemIdCompra
+      ? descricoesPorIdCompra.get(recebivel.origemIdCompra)
+      : null;
+    if (!descricao) {
+      return `⏳ ${devedorTexto} — R$ ${valorTexto}`;
+    }
+    const parcelaTexto = recebivel.totalParcelas > 1
+      ? ` (${recebivel.parcelaAtual}/${recebivel.totalParcelas})`
+      : "";
+    return `⏳ ${devedorTexto} — ${descricao}${parcelaTexto} — R$ ${valorTexto}`;
+  }
+
+  function criarItemRecebimentosTerceiros(titulo, total, pago, pendente, itens, descricoesPorIdCompra) {
     const item = document.createElement("li");
     // Card com borda — mesmo estilo visual de .caixinha-painel (ver styles.css
     // .card-grupo), pra separar visualmente este grupo dos vizinhos na lista.
@@ -554,7 +574,7 @@ export function initTelaMes({ categorias, uid }) {
           sub.style.alignItems = "center";
 
           const textSpan = document.createElement("span");
-          textSpan.textContent = `⏳ ${r.devedor || "Sem devedor"} - R$ ${formatCentavos(r.valorCentavos)}`;
+          textSpan.textContent = formatarTextoRecebivelPendente(r, descricoesPorIdCompra);
 
           const btnReceber = document.createElement("button");
           btnReceber.type = "button";
@@ -587,6 +607,13 @@ export function initTelaMes({ categorias, uid }) {
 
       // Lista de recebimentos já confirmados — mesmo padrão de recolhimento, própria e
       // independente da(s) lista(s) de pendentes acima.
+      //
+      // NÃO resolve a descrição da compra de origem aqui (deixado como está, de
+      // propósito — ver pedido original): a receita `l` só guarda `idRecebivel`
+      // (aponta pra um /receber/{id}), não `origemIdCompra` direto; resolver exigiria
+      // uma leitura extra de /receber por item recebido (sem índice reaproveitável em
+      // lote, diferente dos pendentes acima, que já vêm de /receber com
+      // origemIdCompra em mãos) — mais complexo e fora do escopo desta melhoria.
       const { btnToggle: btnToggleRecebidos, lista: listaRecebidos } = criarBlocoListaColapsavel();
 
       jaRecebidos.forEach((l) => {
@@ -932,6 +959,16 @@ export function initTelaMes({ categorias, uid }) {
       cartoesCacheMes = cartoes;
       const mesAtual = mesDeData(dataHojeISO());
 
+      // Descrição da compra de origem de cada recebível pendente deste mês (ver
+      // CLAUDE.md "Crédito a receber" e db.js resolverDescricoesPorIdCompra) — coleta os
+      // origemIdCompra DISTINTOS e resolve cada um uma única vez, nunca uma consulta por
+      // linha (ver "Recebimentos de Terceiros" mais abaixo).
+      const origensIdCompraPendentes = recebiveisDoMes
+        .filter((r) => r.status === "pendente")
+        .map((r) => r.origemIdCompra);
+      const descricoesPorIdCompra = await resolverDescricoesPorIdCompra(origensIdCompraPendentes);
+      if (meuPedido !== pedidoAtual) return;
+
       if (mesSelecionado <= mesAtual && !mesesMaterializando.has(mesSelecionado)) {
         mesesMaterializando.add(mesSelecionado);
         try {
@@ -1162,7 +1199,7 @@ export function initTelaMes({ categorias, uid }) {
           // ver criarItemRecebimentosTerceiros) — todas as outras categorias de receita
           // continuam pelo caminho genérico de sempre.
           if (catId === "recebimentos_terceiros") {
-            listaReceitas.appendChild(criarItemRecebimentosTerceiros(obterNomeIconeCategoria(catId), dados.total, dados.pago, dados.pendente, dados.itens));
+            listaReceitas.appendChild(criarItemRecebimentosTerceiros(obterNomeIconeCategoria(catId), dados.total, dados.pago, dados.pendente, dados.itens, descricoesPorIdCompra));
           } else {
             listaReceitas.appendChild(criarItemAgrupado(obterNomeIconeCategoria(catId), dados.total, dados.pago, dados.pendente, "receita", dados.itens));
           }
