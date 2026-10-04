@@ -207,6 +207,49 @@ export function calcularCascata(parcelasExistentes, parcelaEditadaAtual, camposA
     .map((parcela) => ({ id: parcela.id, mudancas: { ...camposAlterados } }));
 }
 
+// Recalcula os campos derivados da DATA de um lançamento (ver CLAUDE.md "Vencimento e
+// mês de desembolso", exceção "editar a DATA"): `mes` sempre acompanha a nova data; pra
+// crédito (cartao informado), `faturaMes`/`vencimento`/`mesDesembolso` são recalculados
+// com a MESMA regra de sempre (dia da nova data vs. diaFechamento/diaVencimento do
+// cartão já atribuído ao lançamento — nunca se troca o cartão aqui). Pra não-crédito,
+// `mesDesembolso = mes` (o dinheiro já saiu/entrou na hora; só a contagem por mês muda).
+export function calcularCamposDataLancamento(dataISO, cartao) {
+  const mes = mesDeData(dataISO);
+  if (!cartao) {
+    return { data: dataISO, mes, mesDesembolso: mes };
+  }
+  const faturaMes = calcularFaturaMes(dataISO, cartao.diaFechamento);
+  const { vencimento, mesDesembolso } = calcularVencimentoEDesembolso({
+    faturaMes,
+    diaFechamento: cartao.diaFechamento,
+    diaVencimento: cartao.diaVencimento
+  });
+  return { data: dataISO, mes, faturaMes, vencimento, mesDesembolso };
+}
+
+// Cascata de DATA (ver CLAUDE.md "Cascata de data (parcelas futuras)"): quando a parcela
+// editada muda de data, as parcelas FUTURAS (parcelaAtual maior, pago:false — mesma regra
+// de segurança de calcularCascata, acima) são deslocadas mantendo o MESMO ESPAÇAMENTO
+// MENSAL a partir da nova data da parcela editada (a parcela k fica "k menos a parcela
+// editada" meses depois dela), com todos os campos derivados
+// (mes/faturaMes/vencimento/mesDesembolso) recalculados na nova posição via
+// calcularCamposDataLancamento. O dia-do-mês usado é o da nova data, com clamp pra meses
+// mais curtos (ex.: dia 31 cai pra 28/29 em fevereiro) — mesmo cuidado já usado em
+// gerarOcorrenciaRecorrencia.
+export function calcularCascataData(parcelasExistentes, parcelaEditadaAtual, novaDataEditada, cartao) {
+  const diaBase = parseInt(novaDataEditada.slice(8, 10), 10);
+  const mesBase = mesDeData(novaDataEditada);
+  return parcelasExistentes
+    .filter((parcela) => parcela.parcelaAtual > parcelaEditadaAtual && !parcela.pago)
+    .map((parcela) => {
+      const offset = parcela.parcelaAtual - parcelaEditadaAtual;
+      const mesDestino = somarMeses(mesBase, offset);
+      const dia = Math.min(diaBase, diasNoMes(mesDestino));
+      const novaData = `${mesDestino}-${String(dia).padStart(2, "0")}`;
+      return { id: parcela.id, mudancas: calcularCamposDataLancamento(novaData, cartao) };
+    });
+}
+
 // --- Recorrência (regra + projeção virtual — ver CLAUDE.md "Recorrência (contas e
 // receitas mensais)"). A regra é gravada uma vez em /recorrencias; meses futuros são
 // projetados virtualmente aqui (nada é gravado) e o mês corrente é materializado em

@@ -14,17 +14,21 @@ import {
   marcarLancamentoPago,
   marcarRecebivelRecebido,
   desfazerRecebimento,
-  pagarFaturaEmLote
+  pagarFaturaEmLote,
+  atualizarLancamentoComData,
+  movimentarCaixa
 } from "../db.js";
 import {
   formatCentavos,
+  parseValorParaCentavos,
   mesDeData,
   dataHojeISO,
   somarMeses,
   projetarOcorrenciasDoMes,
   projetarOcorrenciasPorDesembolso,
   obterMesDesembolso,
-  ehReceitaDeRecebivel
+  ehReceitaDeRecebivel,
+  lancamentoMoveCaixa
 } from "../logic.js";
 
 const NOMES_MES = [
@@ -83,6 +87,11 @@ export function initTelaMes({ categorias, uid }) {
   const listaDespesasVista = document.getElementById("lista-mes-despesas-vista");
 
   let categoriasCache = categorias || [];
+  // Cartões em cache, atualizado a cada carregar() — usado só pela edição inline de
+  // lançamento (ver criarFormEdicaoLancamento), pra recalcular faturaMes/vencimento/
+  // mesDesembolso ao trocar a DATA de um lançamento no crédito, sem precisar de uma
+  // consulta extra nem trocar o cartão já atribuído.
+  let cartoesCacheMes = [];
   let mesSelecionado = mesDeData(dataHojeISO());
   let pedidoAtual = 0;
   // Trava por mês: evita que duas chamadas concorrentes de carregar() (reload rápido,
@@ -95,6 +104,164 @@ export function initTelaMes({ categorias, uid }) {
     const cat = categoriasCache.find(c => c.chave === categoriaId);
     if (!cat) return categoriaId;
     return `${cat.nome}${cat.icone ? " " + cat.icone : ""}`;
+  }
+
+  // Mesmo filtro de categorias usado em ui/lancamento.js (categoriasParaTipo): despesa/
+  // receita/ambos ativas, pro tipo do lançamento sendo editado.
+  function categoriasParaTipoMes(tipo) {
+    return categoriasCache.filter(
+      (c) => (c.tipo === tipo || c.tipo === "ambos") && c.ativo !== false
+    );
+  }
+
+  // Abre (ou fecha, se já aberto) o mini-formulário inline de edição de um lançamento
+  // individual (valor/descrição/categoria/DATA) — aparece junto dos botões Pagar/
+  // Receber/🗑️ nos grupos da aba Mês (ver CLAUDE.md "Vencimento e mês de desembolso",
+  // exceção "editar a DATA"). Único ponto de edição desta aba: sempre delega pra db.js
+  // `atualizarLancamentoComData` (mesma função usada por ui/lancamento.js), que decide
+  // sozinha se precisa recalcular faturaMes/vencimento/mesDesembolso e cascatear pras
+  // parcelas futuras — nenhuma lógica de data/cascata duplicada aqui.
+  function alternarFormEdicaoLancamento(sub, lancamento) {
+    const existente = sub.nextElementSibling;
+    if (existente && existente.dataset && existente.dataset.formEdicao === lancamento.id) {
+      existente.remove();
+      return;
+    }
+
+    const formLi = document.createElement("li");
+    formLi.dataset.formEdicao = lancamento.id;
+    formLi.className = "lanc-item-edicao";
+    formLi.style.display = "flex";
+    formLi.style.flexDirection = "column";
+    formLi.style.gap = "8px";
+    formLi.style.padding = "8px 0";
+    formLi.style.borderBottom = "1px solid var(--fundo)";
+
+    const campoValor = document.createElement("input");
+    campoValor.type = "text";
+    campoValor.inputMode = "decimal";
+    campoValor.value = (lancamento.valorCentavos / 100).toFixed(2).replace(".", ",");
+    campoValor.setAttribute("aria-label", "Valor (R$)");
+
+    const campoDescricao = document.createElement("input");
+    campoDescricao.type = "text";
+    campoDescricao.value = lancamento.descricao || "";
+    campoDescricao.setAttribute("aria-label", "Descrição");
+
+    const campoCategoria = document.createElement("select");
+    campoCategoria.setAttribute("aria-label", "Categoria");
+    for (const cat of categoriasParaTipoMes(lancamento.tipo)) {
+      if (cat.sistema) continue;
+      const opt = document.createElement("option");
+      opt.value = cat.chave;
+      opt.textContent = `${cat.nome}${cat.icone ? " " + cat.icone : ""}`;
+      if (cat.chave === lancamento.categoriaId) opt.selected = true;
+      campoCategoria.appendChild(opt);
+    }
+
+    // Data: pra crédito, mudar recalcula faturaMes/vencimento/mesDesembolso com o
+    // cartão JÁ atribuído (nunca troca o cartão) e, sendo parcela, desloca as parcelas
+    // FUTURAS ainda não pagas mantendo o mesmo espaçamento mensal (cascata de data).
+    const campoData = document.createElement("input");
+    campoData.type = "date";
+    campoData.value = lancamento.data || "";
+    campoData.setAttribute("aria-label", "Data");
+
+    const linhaBotoes = document.createElement("div");
+    linhaBotoes.style.display = "flex";
+    linhaBotoes.style.gap = "8px";
+
+    const btnSalvar = document.createElement("button");
+    btnSalvar.type = "button";
+    btnSalvar.textContent = "Salvar";
+    btnSalvar.className = "botao-secundario botao-pequeno";
+
+    const btnCancelar = document.createElement("button");
+    btnCancelar.type = "button";
+    btnCancelar.textContent = "Cancelar";
+    btnCancelar.className = "botao-secundario botao-pequeno";
+    btnCancelar.onclick = (e) => {
+      e.stopPropagation();
+      formLi.remove();
+    };
+
+    const erro = document.createElement("p");
+    erro.className = "erro";
+    erro.setAttribute("role", "alert");
+    erro.style.margin = "0";
+
+    btnSalvar.onclick = async (e) => {
+      e.stopPropagation();
+      erro.textContent = "";
+
+      const valorCentavos = parseValorParaCentavos(campoValor.value);
+      if (isNaN(valorCentavos) || valorCentavos === 0) {
+        erro.textContent = "Informe um valor válido diferente de zero.";
+        return;
+      }
+      if (!campoData.value) {
+        erro.textContent = "Informe a data.";
+        return;
+      }
+
+      const mudancas = {
+        valorCentavos,
+        descricao: campoDescricao.value.trim(),
+        categoriaId: campoCategoria.value
+      };
+
+      btnSalvar.disabled = true;
+      btnSalvar.textContent = "Salvando...";
+      try {
+        let avisoCaixaEdicao = "";
+
+        const cartaoDoLancamento = lancamento.cartaoId
+          ? cartoesCacheMes.find((c) => c.id === lancamento.cartaoId)
+          : null;
+        await atualizarLancamentoComData(lancamento, mudancas, campoData.value, cartaoDoLancamento);
+
+        // Mesmo critério de ui/lancamento.js (logic.js lancamentoMoveCaixa): ajusta o
+        // Caixa pela DIFERENÇA de valor, nunca por mudar só a data (o dinheiro já se
+        // moveu no valor antigo na criação; crédito nunca move o Caixa na criação).
+        const diferenca = valorCentavos - lancamento.valorCentavos;
+        if (lancamentoMoveCaixa(lancamento) && diferenca !== 0) {
+          const ajusteSinalizado = (lancamento.tipo === "receita" ? 1 : -1) * diferenca;
+          try {
+            await movimentarCaixa({
+              tipo: ajusteSinalizado > 0 ? "entrada" : "saida",
+              valorCentavos: Math.abs(ajusteSinalizado),
+              origem: "ajuste_edicao",
+              lancamentoId: lancamento.id,
+              uid
+            });
+          } catch (erroCaixa) {
+            console.error("Falha ao ajustar caixa na edição do lançamento:", erroCaixa);
+            avisoCaixaEdicao = " O saldo do Caixa pode não ter sido ajustado — confira na aba Caixa.";
+          }
+        }
+
+        await carregar();
+        // A lista inteira é recriada por carregar() (este form some junto) — por isso
+        // o aviso vai por alert(), não por erro (que já não estaria mais visível na
+        // hora que o usuário pudesse ler).
+        if (avisoCaixaEdicao) alert("Lançamento atualizado!" + avisoCaixaEdicao);
+      } catch (erroRequisicao) {
+        erro.textContent = `Erro ao salvar: ${erroRequisicao.message || erroRequisicao.code || "erro desconhecido"}`;
+        btnSalvar.disabled = false;
+        btnSalvar.textContent = "Salvar";
+      }
+    };
+
+    linhaBotoes.appendChild(btnSalvar);
+    linhaBotoes.appendChild(btnCancelar);
+    formLi.appendChild(campoValor);
+    formLi.appendChild(campoDescricao);
+    formLi.appendChild(campoCategoria);
+    formLi.appendChild(campoData);
+    formLi.appendChild(linhaBotoes);
+    formLi.appendChild(erro);
+
+    sub.after(formLi);
   }
 
   // Padrão de recolhimento reaproveitado das Caixinhas (ver ui/caixinhas.js): lista de
@@ -684,6 +851,15 @@ export function initTelaMes({ categorias, uid }) {
           }
         };
 
+        const btnEditar = document.createElement("button");
+        btnEditar.type = "button";
+        btnEditar.textContent = "Editar";
+        btnEditar.className = "botao-secundario botao-pequeno";
+        btnEditar.onclick = (e) => {
+          e.stopPropagation();
+          alternarFormEdicaoLancamento(sub, it);
+        };
+
         const btnDel = document.createElement("button");
         btnDel.type = "button";
         btnDel.textContent = "🗑️";
@@ -703,6 +879,7 @@ export function initTelaMes({ categorias, uid }) {
         };
 
         acoesDiv.appendChild(btnToggle);
+        acoesDiv.appendChild(btnEditar);
         acoesDiv.appendChild(btnDel);
       } else {
         const spanVirtual = document.createElement("span");
@@ -752,6 +929,7 @@ export function initTelaMes({ categorias, uid }) {
       if (meuPedido !== pedidoAtual) return;
 
       const cartoesPorId = Object.fromEntries(cartoes.map((c) => [c.id, c]));
+      cartoesCacheMes = cartoes;
       const mesAtual = mesDeData(dataHojeISO());
 
       if (mesSelecionado <= mesAtual && !mesesMaterializando.has(mesSelecionado)) {

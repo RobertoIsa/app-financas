@@ -26,7 +26,14 @@ import {
   runTransaction
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-database.js";
 import { firebaseConfig } from "./firebase-config.js";
-import { calcularCascata, dataHojeISO, lancamentoMoveCaixa, origemCaixaDoLancamento } from "./logic.js";
+import {
+  calcularCascata,
+  calcularCamposDataLancamento,
+  calcularCascataData,
+  dataHojeISO,
+  lancamentoMoveCaixa,
+  origemCaixaDoLancamento
+} from "./logic.js";
 
 const app = initializeApp(firebaseConfig);
 
@@ -193,12 +200,45 @@ export async function salvarParcelasCompra(parcelas, idCompraExistente, recebive
   await update(ref(db), atualizacoes);
 }
 
-// Atualiza valor/descrição/categoria (ou outros campos) de uma parcela e propaga a
-// mesma mudança para as parcelas FUTURAS ainda não pagas do mesmo idCompra (cascata —
-// ver CLAUDE.md "Cascata"), tudo numa única operação atômica.
-export async function atualizarParcelaComCascata(idCompra, parcelaAtual, mudancas) {
-  const parcelas = await lerLancamentosPorIdCompra(idCompra);
+// Atualiza um lançamento — valor/descrição/categoria e, opcionalmente, a DATA (ver
+// CLAUDE.md "Vencimento e mês de desembolso", exceção "editar a DATA" e "Cascata de data
+// (parcelas futuras)"). Ponto ÚNICO de entrada pra edição de lançamento usado tanto por
+// ui/lancamento.js quanto por ui/mes.js — nunca duplicar esta lógica nos dois lugares.
+//
+// `mudancasBase`: campos que NÃO dependem da data (valorCentavos/descricao/categoriaId).
+// `novaData` (opcional): quando informada e diferente de `lancamento.data`, recalcula
+// mes/mesDesembolso — e, sendo crédito (`lancamento.idCompra` presente), também
+// faturaMes/vencimento, usando `cartaoDoLancamento` (o cartão JÁ atribuído; esta função
+// nunca troca o cartão de um lançamento).
+//
+// Sendo uma parcela (`idCompra` presente — todo lançamento no crédito tem idCompra,
+// mesmo à vista/totalParcelas=1), propaga pras parcelas FUTURAS ainda não pagas
+// (parcelaAtual maior, pago:false): a cascata de valor/descrição/categoria já existente
+// (calcularCascata) E, se a data mudou, a cascata de data (calcularCascataData, que
+// desloca cada parcela futura mantendo o mesmo espaçamento mensal a partir da nova data
+// da parcela editada) — as duas rodam em paralelo sobre o MESMO conjunto de parcelas
+// futuras, cada uma só grava os campos que lhe cabem, tudo numa única operação atômica
+// (update multi-caminho).
+//
+// Lançamentos no crédito NUNCA movem o Caixa na criação (só na baixa da fatura via
+// pagarFaturaEmLote — ver CLAUDE.md "Caixa"), então esta função nunca precisa ajustar o
+// Caixa por si só. Quem chama continua responsável pelo ajuste de Caixa quando
+// `valorCentavos` muda num lançamento NÃO-crédito que já moveu o Caixa (via
+// logic.js `lancamentoMoveCaixa` + `movimentarCaixa`), exatamente como já fazia antes —
+// comportamento inalterado por esta função, que só cuida dos campos do lançamento.
+export async function atualizarLancamentoComData(lancamento, mudancasBase, novaData, cartaoDoLancamento) {
   const agora = Date.now();
+  const dataMudou = !!novaData && novaData !== lancamento.data;
+  const cartaoParaRecalculo = lancamento.idCompra ? cartaoDoLancamento : null;
+  const camposData = dataMudou ? calcularCamposDataLancamento(novaData, cartaoParaRecalculo) : {};
+  const mudancasCompletas = { ...mudancasBase, ...camposData };
+
+  if (!lancamento.idCompra) {
+    await atualizarLancamento(lancamento.id, mudancasCompletas);
+    return;
+  }
+
+  const parcelas = await lerLancamentosPorIdCompra(lancamento.idCompra);
   const atualizacoes = {};
 
   // Paths totalmente qualificados (lancamentos/{id}/{campo}) em vez de gravar o nó
@@ -211,13 +251,15 @@ export async function atualizarParcelaComCascata(idCompra, parcelaAtual, mudanca
     }
   }
 
-  const parcelaEditada = parcelas.find((p) => p.parcelaAtual === parcelaAtual);
-  if (parcelaEditada) {
-    agendarCampos(parcelaEditada.id, mudancas);
-  }
+  agendarCampos(lancamento.id, mudancasCompletas);
 
-  for (const { id, mudancas: camposCascata } of calcularCascata(parcelas, parcelaAtual, mudancas)) {
-    agendarCampos(id, camposCascata);
+  for (const { id, mudancas } of calcularCascata(parcelas, lancamento.parcelaAtual, mudancasBase)) {
+    agendarCampos(id, mudancas);
+  }
+  if (dataMudou) {
+    for (const { id, mudancas } of calcularCascataData(parcelas, lancamento.parcelaAtual, novaData, cartaoParaRecalculo)) {
+      agendarCampos(id, mudancas);
+    }
   }
 
   await update(ref(db), atualizacoes);

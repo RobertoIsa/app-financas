@@ -5,8 +5,7 @@ import {
   lerLancamentosDoMes,
   criarLancamento,
   criarLancamentoComRecebiveis,
-  atualizarLancamento,
-  atualizarParcelaComCascata,
+  atualizarLancamentoComData,
   salvarParcelasCompra,
   excluirLancamento,
   movimentarCaixa
@@ -316,6 +315,16 @@ export function initTelaLancamento({ categorias, membros, cartoes, uid, irParaCa
       campoCategoria.appendChild(opt);
     }
 
+    // Data (ver CLAUDE.md "Vencimento e mês de desembolso", exceção "editar a DATA"):
+    // pra crédito, mudar a data recalcula faturaMes/vencimento/mesDesembolso com o
+    // cartão JÁ atribuído (nunca troca o cartão aqui); sendo uma parcela, ainda
+    // desloca as parcelas FUTURAS ainda não pagas mantendo o mesmo espaçamento mensal
+    // (ver atualizarLancamentoComData em db.js — cascata de data).
+    const campoData = document.createElement("input");
+    campoData.type = "date";
+    campoData.value = lancamento.data || "";
+    campoData.setAttribute("aria-label", "Data");
+
     const btnSalvar = document.createElement("button");
     btnSalvar.type = "submit";
     btnSalvar.textContent = "Salvar";
@@ -334,6 +343,7 @@ export function initTelaLancamento({ categorias, membros, cartoes, uid, irParaCa
     form.appendChild(campoValor);
     form.appendChild(campoDescricao);
     form.appendChild(campoCategoria);
+    form.appendChild(campoData);
     form.appendChild(btnSalvar);
     form.appendChild(btnCancelar);
     form.appendChild(erroEdicao);
@@ -348,6 +358,10 @@ export function initTelaLancamento({ categorias, membros, cartoes, uid, irParaCa
         erroEdicao.textContent = "Informe um valor válido diferente de zero.";
         return;
       }
+      if (!campoData.value) {
+        erroEdicao.textContent = "Informe a data.";
+        return;
+      }
       const mudancas = {
         valorCentavos,
         descricao: campoDescricao.value.trim(),
@@ -358,33 +372,40 @@ export function initTelaLancamento({ categorias, membros, cartoes, uid, irParaCa
       btnSalvar.textContent = "Salvando...";
       try {
         let avisoCaixaEdicao = "";
-        if (lancamento.idCompra && lancamento.totalParcelas > 1) {
-          await atualizarParcelaComCascata(lancamento.idCompra, lancamento.parcelaAtual, mudancas);
-        } else {
-          await atualizarLancamento(lancamento.id, mudancas);
 
-          // Se este lançamento move o caixa (mesmo critério de db.js excluirLancamento,
-          // via logic.js lancamentoMoveCaixa — cobre lançamento manual imediato, receita
-          // de recebível e recorrência já paga), ajusta o saldo pela DIFERENÇA de valor,
-          // não pelo valor novo do zero — ver CLAUDE.md "Caixa (saldo acumulado real)".
-          const diferenca = valorCentavos - lancamento.valorCentavos;
+        // Ponto ÚNICO de entrada pra edição de lançamento (ver db.js
+        // atualizarLancamentoComData) — já trata cascata de valor/descrição/categoria
+        // E de data pras parcelas futuras, se for o caso. Crédito nunca move o Caixa
+        // na criação, então o ajuste abaixo (lancamentoMoveCaixa) continua seguro pra
+        // qualquer lançamento, crédito ou não.
+        const cartaoDoLancamento = lancamento.cartaoId
+          ? cartoesCache.find((c) => c.id === lancamento.cartaoId)
+          : null;
+        await atualizarLancamentoComData(lancamento, mudancas, campoData.value, cartaoDoLancamento);
 
-          if (lancamentoMoveCaixa(lancamento) && diferenca !== 0) {
-            // Sinal do ajuste no caixa: receita subindo ou despesa descendo = entra mais
-            // dinheiro; receita descendo ou despesa subindo = sai mais dinheiro.
-            const ajusteSinalizado = (lancamento.tipo === "receita" ? 1 : -1) * diferenca;
-            try {
-              await movimentarCaixa({
-                tipo: ajusteSinalizado > 0 ? "entrada" : "saida",
-                valorCentavos: Math.abs(ajusteSinalizado),
-                origem: "ajuste_edicao",
-                lancamentoId: lancamento.id,
-                uid
-              });
-            } catch (erroCaixa) {
-              console.error("Falha ao ajustar caixa na edição do lançamento:", erroCaixa);
-              avisoCaixaEdicao = " O saldo do Caixa pode não ter sido ajustado — confira na aba Caixa.";
-            }
+        // Se este lançamento move o caixa (mesmo critério de db.js excluirLancamento,
+        // via logic.js lancamentoMoveCaixa — cobre lançamento manual imediato, receita
+        // de recebível e recorrência já paga), ajusta o saldo pela DIFERENÇA de valor,
+        // não pelo valor novo do zero — ver CLAUDE.md "Caixa (saldo acumulado real)".
+        // Mudar só a data NUNCA precisa ajustar o Caixa: o dinheiro já se moveu no
+        // valor antigo no momento da criação, só a contagem por mês muda.
+        const diferenca = valorCentavos - lancamento.valorCentavos;
+
+        if (lancamentoMoveCaixa(lancamento) && diferenca !== 0) {
+          // Sinal do ajuste no caixa: receita subindo ou despesa descendo = entra mais
+          // dinheiro; receita descendo ou despesa subindo = sai mais dinheiro.
+          const ajusteSinalizado = (lancamento.tipo === "receita" ? 1 : -1) * diferenca;
+          try {
+            await movimentarCaixa({
+              tipo: ajusteSinalizado > 0 ? "entrada" : "saida",
+              valorCentavos: Math.abs(ajusteSinalizado),
+              origem: "ajuste_edicao",
+              lancamentoId: lancamento.id,
+              uid
+            });
+          } catch (erroCaixa) {
+            console.error("Falha ao ajustar caixa na edição do lançamento:", erroCaixa);
+            avisoCaixaEdicao = " O saldo do Caixa pode não ter sido ajustado — confira na aba Caixa.";
           }
         }
         await carregarLancamentosDoMes();

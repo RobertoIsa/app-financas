@@ -387,6 +387,20 @@ da compra. (Isso corrige o agrupamento por mês-da-compra que a planilha usava.)
 > **`faturaMes` é congelado.** É gravado no momento em que a compra é criada e **não**
 > recalcula retroativamente. Se você editar depois o dia de fechamento do cartão, a mudança
 > vale só para compras **novas** — faturas já lançadas/conferidas/pagas não se remexem.
+>
+> **Exceção: editar a DATA de um lançamento já existente.** A tela de edição permite trocar
+> a data do lançamento (ex.: corrigir uma compra lançada no dia errado). Ao salvar, para
+> lançamentos no crédito, `faturaMes`/`vencimento`/`mesDesembolso` são **recalculados** com
+> a nova data, usando a mesma regra de sempre (dia da compra vs. `diaFechamento` do cartão
+> já atribuído — não se troca o cartão). `mes` (competência) também acompanha a nova data.
+>
+> **Cascata de data (parcelas futuras).** Se o lançamento editado for uma parcela
+> (`idCompra` preenchido), a mudança de data **propaga para as parcelas FUTURAS** da mesma
+> compra (`parcelaAtual` maior, `pago: false`) — mesma regra de segurança já usada na
+> cascata de valor/descrição/categoria: nunca mexe em parcela já paga. As futuras são
+> deslocadas mantendo o **mesmo espaçamento mensal** entre elas (a 2ª continua 1 mês depois
+> da 1ª, a 3ª 2 meses depois, etc., a partir da nova data da parcela editada), com
+> `faturaMes`/`vencimento`/`mesDesembolso`/`mes` de cada uma recalculados na nova posição.
 
 ### Vencimento e mês de desembolso (eixo principal)
 A fatura fecha num mês (`faturaMes`) mas é **paga** no dia de vencimento — que pode cair
