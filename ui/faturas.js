@@ -101,14 +101,22 @@ export function initTelaFaturas({ cartoes, uid }) {
         li.style.alignItems = "center";
         
         const valorFormatado = formatCentavos(lanc.valorCentavos || 0);
-        
-        const statusBadge = estaPago 
+
+        const statusBadge = estaPago
           ? `<span style="background: #065f46; color: #34d399; padding: 2px 8px; border-radius: 4px; font-size: 12px; margin-left: 10px;">Pago</span>`
           : `<span style="background: #7f1d1d; color: #fca5a5; padding: 2px 8px; border-radius: 4px; font-size: 12px; margin-left: 10px;">Pendente</span>`;
-        
+
+        // "(k/n)" — mesma convenção já usada na lista "Lançamentos do mês" da aba
+        // Lançar (ver ui/lancamento.js criarItemLancamento). Só aparece com
+        // totalParcelas > 1: compra à vista, lançamentos antigos sem esses campos e
+        // o lançamento de adiantamento (sem totalParcelas) não mostram nada.
+        const parcelaTexto = lanc.totalParcelas > 1
+          ? ` (${lanc.parcelaAtual}/${lanc.totalParcelas})`
+          : "";
+
         li.innerHTML = `
           <div>
-            <span>${lanc.descricao}</span>
+            <span>${lanc.descricao}${parcelaTexto}</span>
             ${statusBadge}
           </div>
           <span style="font-weight: bold; color: ${estaPago ? '#9ca3af' : '#ff6b6b'};">${valorFormatado}</span>
